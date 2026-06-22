@@ -1,0 +1,56 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# PHP
+vendor/
+composer.lock
+
+# Testing
+test_config.php
+test_cases*.csv
+tests/
+
+# Environment
+.env
+*.log
+
+
+# WHMCS compiled templates (auto-generated, not source)
+templates_c/
+smarty/
+cache/
+
+# Environment and config files with sensitive data
+*.env
+config.php
+configuration.php
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# PHP logs
+*.log
+error_log
+
+# Node modules if any
+node_modules/
+
+# Composer vendor (if added later)
+vendor/
+composer.lock
