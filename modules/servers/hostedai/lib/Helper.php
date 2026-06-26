@@ -847,10 +847,10 @@ class Helper
     public function getInstanceBilling($instanceId)
     {
         try {
-            $start    = urlencode(date('Y-m-01') . 'T00:00:00');
-            $end      = urlencode(date('Y-m-d')  . 'T23:59:59');
+            $start    = urlencode(date('Y-m-01') . 'T00:00');
+            $end      = urlencode(date('Y-m-d')  . 'T23:59');
             $endpoint = 'instance-billing/'
-                      . urlencode($instanceId) . '/'
+                      . $instanceId . '/'
                       . $start . '/'
                       . $end . '/monthly?timezone=utc';
             return $this->curlCall('GET', 'getInstanceBilling', $endpoint, '');

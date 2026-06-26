@@ -912,7 +912,8 @@ function hostedai_ClientArea(array $params)
         $helper = new Helper($params);
 
         // ── CLIENT AREA ACTION HANDLER ──────────────────────
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' &&
+            (isset($_POST['instance_action']) || isset($_POST['delete_instance']))) {
 
             $instanceId = $helper->getPoolSubscriptionIdFromNotes(
                 $params['serviceid']

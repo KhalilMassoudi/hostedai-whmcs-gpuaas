@@ -36,19 +36,31 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 1px;
-    color: rgba(255,255,255,0.5) !important;
+    color: #555555 !important;
     margin: 0;
 }
 .gpu-resource-card .card-info .card-value {
     font-size: 20px;
     font-weight: 700;
-    color: #ffffff !important;
+    color: #111111 !important;
     margin: 2px 0 0 0;
 }
 .gpu-resource-card .card-info .card-limit {
     font-size: 11px;
-    color: rgba(255,255,255,0.4) !important;
+    color: #777777 !important;
     margin: 0;
+}
+
+/* Fix resource card text visibility */
+.overview-card h3,
+.overview-card p,
+.overview-card span,
+.overview-card div {
+    color: #333 !important;
+}
+[class*="card"] h3,
+[class*="card"] p {
+    color: #333 !important;
 }
 
 /* Section panels */
@@ -212,7 +224,7 @@
 
 /* Terminal logs */
 .gpu-terminal {
-    background: #0d1117;
+    background: #161b22;
     border-radius: 8px;
     padding: 14px;
     max-height: 220px;
@@ -221,6 +233,7 @@
     font-size: 12px;
     border: 1px solid rgba(255,255,255,0.06);
 }
+.gpu-terminal * { color: inherit; }
 .gpu-log-entry {
     display: flex;
     gap: 10px;
