@@ -461,6 +461,150 @@ class Helper
         }
     }
 
+    /**
+     * Ensure the client-level Hosted AI team_id custom field exists.
+     * (One team per WHMCS client — Change 1.)
+     */
+    public function ensureClientTeamIdField()
+    {
+        try {
+            $field = Capsule::table('tblcustomfields')
+                ->where('type', 'client')
+                ->where('fieldname', 'like', '%hostedai_team_id%')
+                ->first();
+
+            if (!$field) {
+                Capsule::table('tblcustomfields')->insert([
+                    'type'      => 'client',
+                    'relid'     => 0,
+                    'fieldname' => 'Hosted AI Team ID|hostedai_team_id',
+                    'fieldtype' => 'text',
+                    'adminonly' => 'on',
+                ]);
+
+                $field = Capsule::table('tblcustomfields')
+                    ->where('type', 'client')
+                    ->where('fieldname', 'like', '%hostedai_team_id%')
+                    ->first();
+            }
+
+            return $field;
+        } catch (Exception $e) {
+            logActivity('hostedai: ensureClientTeamIdField error: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /** Save (or update) the Hosted AI team_id for a WHMCS client. */
+    public function saveClientTeamId($clientId, $teamId)
+    {
+        try {
+            $field = $this->ensureClientTeamIdField();
+            if (!$field) {
+                return;
+            }
+
+            $existing = Capsule::table('tblcustomfieldsvalues')
+                ->where('fieldid', $field->id)
+                ->where('relid', $clientId)
+                ->first();
+
+            if ($existing) {
+                Capsule::table('tblcustomfieldsvalues')
+                    ->where('fieldid', $field->id)
+                    ->where('relid', $clientId)
+                    ->update(['value' => $teamId]);
+            } else {
+                Capsule::table('tblcustomfieldsvalues')->insert([
+                    'fieldid' => $field->id,
+                    'relid'   => $clientId,
+                    'value'   => $teamId,
+                ]);
+            }
+        } catch (Exception $e) {
+            logActivity('hostedai: saveClientTeamId error: ' . $e->getMessage());
+        }
+    }
+
+    /** Get the Hosted AI team_id for a WHMCS client, or null if none stored. */
+    public function getClientTeamId($clientId)
+    {
+        try {
+            $field = Capsule::table('tblcustomfields')
+                ->where('type', 'client')
+                ->where('fieldname', 'like', '%hostedai_team_id%')
+                ->first();
+
+            if (!$field) {
+                return null;
+            }
+
+            $value = Capsule::table('tblcustomfieldsvalues')
+                ->where('fieldid', $field->id)
+                ->where('relid', $clientId)
+                ->first();
+
+            return $value ? $value->value : null;
+        } catch (Exception $e) {
+            logActivity('hostedai: getClientTeamId error: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Resolve the Hosted AI team_id for a service/client.
+     *
+     * Client-level field is the source of truth for services created after
+     * the client=team change. Falls back to the legacy per-service product
+     * custom field for services created before it, so existing services
+     * keep working without any migration step.
+     */
+    public function resolveTeamId($params)
+    {
+        try {
+            $clientId  = $params['userid'];
+            $serviceId = $params['serviceid'];
+            $pid       = $params['pid'];
+
+            // Try client-level first (new way)
+            $teamId = $this->getClientTeamId($clientId);
+
+            // Fall back to per-service custom field (old way)
+            if (empty($teamId)) {
+                if (isset($params['customfields']['team_id']) && $params['customfields']['team_id'] !== '') {
+                    $teamId = $params['customfields']['team_id'];
+                } else {
+                    $field = Capsule::table('tblcustomfields')
+                        ->where('type', 'product')
+                        ->where('relid', $pid)
+                        ->where('fieldname', 'like', '%team_id%')
+                        ->first();
+
+                    if ($field) {
+                        $value = Capsule::table('tblcustomfieldsvalues')
+                            ->where('fieldid', $field->id)
+                            ->where('relid', $serviceId)
+                            ->first();
+
+                        if ($value) {
+                            $teamId = $value->value;
+                        }
+                    }
+                }
+            }
+
+            if (empty($teamId)) {
+                logActivity('hostedai: WARNING - could not resolve team_id for client '
+                    . $clientId . ' service ' . $serviceId);
+            }
+
+            return $teamId;
+        } catch (Exception $e) {
+            logActivity('hostedai: resolveTeamId error: ' . $e->getMessage());
+            return null;
+        }
+    }
+
     /* Insert Team details in custom table */
     public function insert_teamDetail($userId, $serviceId, $pid, $actionId, $action)
     {
@@ -505,6 +649,12 @@ class Helper
     public function delete_teamDetail($serviceId, $pid)
     {
         try {
+            // Table is only created lazily by insert_teamDetail() for "One Time"
+            // billing cycle services — recurring services never create it, so
+            // guard the delete the same way insert_teamDetail() guards the create.
+            if (!Capsule::schema()->hasTable('mod_hostdaiteam_details')) {
+                return;
+            }
             Capsule::table('mod_hostdaiteam_details')->where('sid', $serviceId)->where('pid', $pid)->delete();
         } catch (\Exception $e) {
             logActivity('Function (delete_teamDetail) Hostedai Error: ' . $e->getMessage());
@@ -968,6 +1118,32 @@ class Helper
             logActivity('hostedai: Failed to read pool subscription ID: ' . $e->getMessage());
         }
         return null;
+    }
+
+    /**
+     * Write the selected recipe name to tblhosting notes (recipe:{name}).
+     * Idempotent — replaces any previous recipe: line rather than appending.
+     *
+     * @param int    $serviceId  tblhosting.id
+     * @param string $recipeName Pass empty string to remove the note.
+     */
+    public function saveRecipeNote($serviceId, $recipeName)
+    {
+        try {
+            $notes = Capsule::table('tblhosting')->where('id', $serviceId)->value('notes');
+            $notes = (string)$notes;
+
+            $notes = preg_replace('/recipe:[^\r\n]*(\r\n|\r|\n)?/', '', $notes);
+            $notes = rtrim($notes);
+
+            if ($recipeName !== '') {
+                $notes = ($notes !== '' ? $notes . "\n" : '') . 'recipe:' . $recipeName;
+            }
+
+            Capsule::table('tblhosting')->where('id', $serviceId)->update(['notes' => $notes]);
+        } catch (\Exception $e) {
+            logActivity('hostedai: Failed to save recipe note: ' . $e->getMessage());
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────

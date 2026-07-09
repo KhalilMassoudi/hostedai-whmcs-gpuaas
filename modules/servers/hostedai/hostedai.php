@@ -178,6 +178,7 @@ function hostedai_ConfigOptions(array $params)
         ],
     ];
     $helper->createHostedaiCustomFields($customfieldarray);
+    $helper->ensureClientTeamIdField();
 
     return array(
 
@@ -328,6 +329,17 @@ function hostedai_ConfigOptions(array $params)
             'Description' => 'Fallback workspace ID if auto-detection fails. Leave empty to always auto-detect from team.',
         ),
 
+        // configoption18 — Recipe name -> service_id map, driven by the
+        // "AI Environment" WHMCS Configurable Option chosen at order time.
+        'recipe_map' => array(
+            'FriendlyName' => 'Recipe to Service ID Map',
+            'Type' => 'textarea',
+            'Rows' => '5',
+            'Cols' => '50',
+            'Default' => '{"No Recipe":"6d578de2-f4a5-44d5-b9be-49d35f2ed7ff","vLLM TinyLlama":"15bacf16-bc2e-4b52-a128-ae24f9d8a0b9","Ollama":"6959262b-3df7-4e66-bb06-afc163a5f02c"}',
+            'Description' => 'JSON map of recipe names (as they appear in the "AI Environment" Configurable Option) to service UUIDs.',
+        ),
+
     );
 
 }
@@ -386,8 +398,7 @@ function hostedai_CreateAccount(array $params)
 
         $serviceId = $params['serviceid'];
         $pid = $params['pid'];
-        $teamId = $params['customfields']['team_id'];
-        $userId = $params['userid'];
+        $clientId = $params['userid'];
 
         $pricingPolicyID = $params['configoption1'];
         $resourcePolicyID =  $params['configoption2'];
@@ -399,92 +410,150 @@ function hostedai_CreateAccount(array $params)
         $email =  $params['clientsdetails']['email'];
         $name =  $params['clientsdetails']['fullname'];
 
-        // First user is always Team Admin — find admin role ID from API
-        $roleID = '';
-        $getRoles = $helper->getPolicyItems('roles');
-        if (isset($getRoles['result']->roles)) {
-            foreach ($getRoles['result']->roles as $role) {
-                if ($role->name === 'team_admin') {
-                    $roleID = $role->id;
-                    break;
+        $workspaceId = '';
+
+        // ── TEAM LOOKUP / REUSE (one Hosted AI team per WHMCS client) ───────
+        $teamId = $helper->getClientTeamId($clientId);
+
+        if (empty($teamId)) {
+            // No team yet for this client — create one.
+
+            // First user is always Team Admin — find admin role ID from API
+            $roleID = '';
+            $getRoles = $helper->getPolicyItems('roles');
+            if (isset($getRoles['result']->roles)) {
+                foreach ($getRoles['result']->roles as $role) {
+                    if ($role->name === 'team_admin') {
+                        $roleID = $role->id;
+                        break;
+                    }
                 }
             }
-        }
 
-        $postData = [
-            'color' => $color ?? '#414141',
-            'description' => '',
-            'image_policy_id' => $imagePolicyID ?? '',
-            "instance_type_policy_id" => $instancePolicyID ?? '',
-            'members' => [
-                [
-                    'email' => $email ?? '',
-                    'name' => $name ?? '',
-                    'role' => $roleID,
-                    'pre_onboard' => true,
-                ]
-            ],
-            'name' => preg_replace('/\s+/', '-', trim($name ?? '')) . '-' . $serviceId,
-            'pricing_policy_id' => $pricingPolicyID ?? '',
-            'resource_policy_id' => $resourcePolicyID ?? '',
-            'service_policy_id' => $servicePolicyID ?? '',
-        ];
-        
+            $teamName = 'client-' . $clientId . '-'
+                . preg_replace('/[^a-z0-9]/i', '', strtolower($name ?? ''));
 
-        if(isset($teamId) && $teamId != '')
-        {
-
-        }else{
+            $postData = [
+                'color' => $color ?? '#414141',
+                'description' => '',
+                'image_policy_id' => $imagePolicyID ?? '',
+                "instance_type_policy_id" => $instancePolicyID ?? '',
+                'members' => [
+                    [
+                        'email' => $email ?? '',
+                        'name' => $name ?? '',
+                        'role' => $roleID,
+                        'pre_onboard' => true,
+                    ]
+                ],
+                'name' => $teamName,
+                'pricing_policy_id' => $pricingPolicyID ?? '',
+                'resource_policy_id' => $resourcePolicyID ?? '',
+                'service_policy_id' => $servicePolicyID ?? '',
+            ];
 
             $getResponse = $helper->createHostedaiTeam($postData);
 
-            if($getResponse['httpcode'] == 200)
-            {
+            if ($getResponse['httpcode'] == 200) {
 
                 if (isset($getResponse['result']->id)) {
                     $teamId = $getResponse['result']->id;
 
                     // Extract workspace from team creation response
-                    $workspaceId = '';
                     if (!empty($getResponse['result']->workspaces)
                         && is_array($getResponse['result']->workspaces)) {
                         $workspaceId = $getResponse['result']->workspaces[0]->id ?? '';
                     }
                     logActivity('hostedai: workspace_id from team response: ' . $workspaceId);
 
-                    $fields = ["team_id" => $teamId];
-                    $helper->insert_hostedai_custom_fields_value($serviceId, $pid, $fields);
+                    // Team is stored at CLIENT level now, not per-service.
+                    $helper->saveClientTeamId($clientId, $teamId);
 
                     $billingCycle = $params['model']->billingcycle;
                     if ($billingCycle === 'One Time') {
-                        $helper->insert_teamDetail($userId, $serviceId, $pid, $teamId, 'insert');
+                        $helper->insert_teamDetail($clientId, $serviceId, $pid, $teamId, 'insert');
                     }
+
+                    logActivity('hostedai: Created new team ' . $teamId . ' for client ' . $clientId);
                 }
 
-            }else{
+            } else {
                 return $getResponse['result']->message;
             }
+        } else {
+            logActivity('hostedai: Reusing existing team ' . $teamId . ' for client ' . $clientId);
+
+            // Existing team — look up its workspace via the API.
+            $teamDetailResponse = $helper->getTeamDetail($teamId);
+
+            logActivity('hostedai DEBUG getTeamDetail HTTP: ' . $teamDetailResponse['httpcode']);
+            logActivity('hostedai DEBUG getTeamDetail result: '
+                . substr(json_encode($teamDetailResponse['result']), 0, 500));
+
+            if ($teamDetailResponse && $teamDetailResponse['httpcode'] == 200) {
+                // Response is wrapped in "team" key
+                $teamObj = $teamDetailResponse['result']->team
+                    ?? $teamDetailResponse['result'];
+                if (!empty($teamObj->workspaces)) {
+                    $workspaceId = $teamObj->workspaces[0]->id ?? '';
+                }
+            }
+
+            logActivity('hostedai: workspace_id for reused team: ' . $workspaceId);
+            if (empty($workspaceId)) {
+                logActivity('hostedai: WARNING - no workspace found for team ' . $teamId);
+            }
         }
+        // ── END TEAM LOOKUP / REUSE ──────────────────────────────────────────
 
         // ── INSTANCE CREATION ────────────────────────────────────────────────
         // configoption10 = gpu_pool_id  configoption11 = vgpus
         // configoption12 = instance_type_id (UUID)  configoption13 = storage_block_id (UUID)
-        // configoption14 = service_id   configoption15 = image_hash
-        // configoption16 = region_id    configoption17 = workspace_id
+        // configoption14 = service_id (fallback)     configoption15 = image_hash
+        // configoption16 = region_id                 configoption17 = workspace_id (fallback)
+        // configoption18 = recipe_map (JSON: recipe name -> service_id)
         $gpuPoolId      = (int)($params['configoption10'] ?? 0);
         $vgpus          = max(1, (int)($params['configoption11'] ?? 1));
         $instanceTypeId = $params['configoption12'] ?? '';
         $storageBlockId = $params['configoption13'] ?? '';
-        $apiServiceId   = $params['configoption14'] ?? '6d578de2-f4a5-44d5-b9be-49d35f2ed7ff';
         $imageHash      = $params['configoption15'] ?? '37191266f9cad5651a92a4b56d8a03bb072bb27d768663e0fc9b6c7ecdfa0a11';
         $regionId       = (int)($params['configoption16'] ?? 5);
 
-        // Fallback to configoption17 if workspace was not extracted from team response
-        if (!isset($workspaceId) || empty($workspaceId)) {
+        // Fallback to configoption17 if workspace was not extracted from team lookup
+        if (empty($workspaceId)) {
             $workspaceId = $params['configoption17'] ?? '';
         }
 
-        $instanceName   = 'whmcs-' . $params['serviceid'];
+        // ── RECIPE SELECTION (WHMCS Configurable Option → service_id) ────────
+        // Hardcoded recipe map (can be overridden by configoption18)
+        $defaultRecipeMap = [
+            'No Recipe'      => '6d578de2-f4a5-44d5-b9be-49d35f2ed7ff',
+            'vLLM TinyLlama' => '15bacf16-bc2e-4b52-a128-ae24f9d8a0b9',
+            'Ollama'         => '6959262b-3df7-4e66-bb06-afc163a5f02c',
+        ];
+
+        // Try configoption18 override first
+        $recipeMapJson = $params['configoption18'] ?? '';
+        $recipeMap = [];
+        if (!empty(trim($recipeMapJson))) {
+            $recipeMap = json_decode($recipeMapJson, true) ?? [];
+        }
+        // Fall back to hardcoded map if configoption empty or invalid
+        if (empty($recipeMap)) {
+            $recipeMap = $defaultRecipeMap;
+        }
+
+        $selectedRecipe = $params['configoptions']['AI Environment']
+            ?? 'No Recipe';
+
+        $apiServiceId = $recipeMap[$selectedRecipe]
+            ?? $recipeMap['No Recipe']
+            ?? '6d578de2-f4a5-44d5-b9be-49d35f2ed7ff';
+
+        logActivity('hostedai: Recipe selected: ' . $selectedRecipe . ' -> service_id: ' . $apiServiceId);
+        // ── END RECIPE SELECTION ─────────────────────────────────────────────
+
+        $instanceName   = 'whmcs-' . $serviceId;
 
         if (!empty($teamId) && $gpuPoolId > 0) {
             logActivity('hostedai: Using resource_policy: '
@@ -505,7 +574,15 @@ function hostedai_CreateAccount(array $params)
 
             if (!empty($instanceResponse['success']) && $instanceResponse['success'] === true) {
                 $instanceId = $instanceResponse['result'];
-                $helper->savePoolSubscriptionId($params['serviceid'], $instanceId);
+                $helper->savePoolSubscriptionId($serviceId, $instanceId);
+                $helper->saveRecipeNote($serviceId, $selectedRecipe);
+
+                // Surface the instance ID in the service's domain field so it's
+                // visible/searchable in the client and admin service lists.
+                Capsule::table('tblhosting')
+                    ->where('id', $serviceId)
+                    ->update(['domain' => $instanceId]);
+
                 logActivity('hostedai: Instance created successfully: ' . $instanceId);
             } else {
                 $errorMsg = isset($instanceResponse['result']->message)
@@ -545,16 +622,20 @@ function hostedai_SuspendAccount(array $params)
 {
     try {
         $helper = new Helper($params);
-        $team_id = $params['customfields']['team_id'];
+        $serviceId = $params['serviceid'];
 
-        $getResponse = $helper->suspendHostedaiTeam($team_id);
-
-        if($getResponse['httpcode'] == 200)
-        {
-            return 'success';   
-        }else{
-            return 'error';
+        // ── INSTANCE SUSPENSION ──────────────────────────────────────────────
+        // Suspending a service only stops that service's instance. The team is
+        // shared across the client's other services (Change 1) and lives as
+        // long as the client exists in WHMCS — it is never suspended here.
+        $instanceId = $helper->getPoolSubscriptionIdFromNotes($serviceId);
+        if (!empty($instanceId)) {
+            $helper->stopInstance($instanceId);
+            logActivity('hostedai: Suspended instance ' . $instanceId . ' for service ' . $serviceId);
         }
+        // ── END INSTANCE SUSPENSION ───────────────────────────────────────────
+
+        return 'success';
 
     } catch (Exception $e) {
         // Record the error in WHMCS's module log.
@@ -583,16 +664,24 @@ function hostedai_UnsuspendAccount(array $params)
     try {
 
         $helper = new Helper($params);
-        $team_id = $params['customfields']['team_id'];
+        $serviceId = $params['serviceid'];
+        $teamId = $helper->resolveTeamId($params);
 
-        $getResponse = $helper->unsuspendHostedaiTeam($team_id);
-
-        if($getResponse['httpcode'] == 200)
-        {
-            return 'success';   
-        }else{
-            return 'error';
+        // Unsuspend the team first, in case it was suspended when all of the
+        // client's services were previously suspended together.
+        if (!empty($teamId)) {
+            $helper->unsuspendHostedaiTeam($teamId);
         }
+
+        // ── INSTANCE UNSUSPENSION ─────────────────────────────────────────────
+        $instanceId = $helper->getPoolSubscriptionIdFromNotes($serviceId);
+        if (!empty($instanceId)) {
+            $helper->startInstance($instanceId);
+            logActivity('hostedai: Unsuspended instance ' . $instanceId . ' for service ' . $serviceId);
+        }
+        // ── END INSTANCE UNSUSPENSION ─────────────────────────────────────────
+
+        return 'success';
 
     } catch (Exception $e) {
         // Record the error in WHMCS's module log.
@@ -623,34 +712,30 @@ function hostedai_TerminateAccount(array $params)
         $helper = new Helper($params);
         $serviceId = $params['serviceid'];
         $pid = $params['pid'];
-        $team_id = $params['customfields']['team_id'];
 
         // ── INSTANCE TERMINATION ────────────────────────────────────────────
-        // Must run BEFORE team deletion so credentials are still valid.
-        $instanceId = $helper->getPoolSubscriptionIdFromNotes($params['serviceid']);
+        // Only this service's instance is removed here. The team is shared
+        // across the client's other services/instances (Change 1) and lives
+        // as long as the client exists in WHMCS — it is never deleted here.
+        // Team deletion happens on client deletion (see hostedai_client_delete
+        // hook), not on service termination.
+        $instanceId = $helper->getPoolSubscriptionIdFromNotes($serviceId);
         if (!empty($instanceId)) {
             $deleteResponse = $helper->deleteInstance($instanceId);
             if ($deleteResponse['httpcode'] == 200 || $deleteResponse['httpcode'] == 204) {
-                $helper->savePoolSubscriptionId($params['serviceid'], '');
+                $helper->savePoolSubscriptionId($serviceId, '');
                 logActivity('hostedai: Instance ' . $instanceId . ' deleted successfully');
             } else {
-                logActivity('hostedai: Warning — could not delete instance ' . $instanceId . ', continuing with team deletion');
+                logActivity('hostedai: Warning — could not delete instance ' . $instanceId);
             }
         }
         // ── END INSTANCE TERMINATION ─────────────────────────────────────────
 
-        // Terminate
-        $getResponse = $helper->terminateHostedaiTeam($team_id);
+        $fields = ["team_id" => ''];
+        $helper->insert_hostedai_custom_fields_value($serviceId, $pid, $fields);
+        $helper->delete_teamDetail($serviceId, $pid);
 
-        if($getResponse['httpcode'] == 200)
-        {
-            $fields = ["team_id" => ''];
-            $helper->insert_hostedai_custom_fields_value($serviceId, $pid, $fields);
-            $helper->delete_teamDetail($serviceId, $pid);
-            return 'success';   
-        }else{
-            return 'error';
-        }
+        return 'success';
 
     } catch (Exception $e) {
         // Record the error in WHMCS's module log.
@@ -681,7 +766,7 @@ function hostedai_ChangePackage(array $params)
         $helper = new Helper($params);
         $pricing_policy_id = $params['configoption1'];
         $resource_policy_id = $params['configoption2'];
-        $teamId = $params['customfields']['team_id'];
+        $teamId = $helper->resolveTeamId($params);
 
         $changePackage = $helper->changeHostedaiTeamPackage($pricing_policy_id, $resource_policy_id, $teamId); 
         if($changePackage['status'] == 'success') {
@@ -734,23 +819,37 @@ function hostedai_AdminServicesTabFields(array $params)
             require(__DIR__ . '/lang/english.php');
         }
 
-        $key = $params['customfields']['team_id'];
+        $teamId = $helper->resolveTeamId($params);
 
-        if($key != '') {
-            $getTeamdata = $helper->getTeamDetail($key);
+        // ── GPU INSTANCE ID / STATUS ─────────────────────────────────────────
+        // Computed up front (independent of the team lookup below) so the
+        // admin can always tell which instance a service maps to, even if
+        // the team/resource-overview lookup below fails.
+        $instanceId = $helper->getPoolSubscriptionIdFromNotes($params['serviceid']);
+        $instanceStatus = 'No instance';
+        if (!empty($instanceId)) {
+            $instanceDetail = $helper->getUnifiedInstance($instanceId);
+            $instanceStatus = ($instanceDetail['httpcode'] == 200)
+                ? ($instanceDetail['result']->status ?? 'Unknown')
+                : 'Not found on Hosted AI';
+        }
+        // ── END GPU INSTANCE ID / STATUS ─────────────────────────────────────
+
+        if(!empty($teamId)) {
+            $getTeamdata = $helper->getTeamDetail($teamId);
 
             // Get team data
             if($getTeamdata['httpcode'] == 200)
             {
-    
+
                 if($getTeamdata['result']->team->is_suspended == true) {
                     $is_suspend = "<span class='btn btn-danger'>Suspended</span>";
                 } else {
                     $is_suspend = "<span class='btn btn-success'>Active</span>";
                 }
-    
-    
-                $getTeamMembers = $helper->getTeamMembers($key);
+
+
+                $getTeamMembers = $helper->getTeamMembers($teamId);
     
                 if($getTeamMembers['httpcode'] == 200) {
                     
@@ -770,7 +869,7 @@ function hostedai_AdminServicesTabFields(array $params)
                     }
         
                     // Get resource overview
-                    $getResourceOverview = $helper->getResourceOverview($key); 
+                    $getResourceOverview = $helper->getResourceOverview($teamId);
                     
                     if($getResourceOverview['httpcode'] == 200) {
                         $resourceOverviewData = $getResourceOverview['result'];
@@ -868,6 +967,8 @@ function hostedai_AdminServicesTabFields(array $params)
                 
                         return [
                             " Hosting Information" => $informationHtml,
+                            'GPU Instance ID' => $instanceId ?: 'No instance',
+                            'Instance Status' => $instanceStatus,
                         ];
         
                     }
@@ -889,6 +990,15 @@ function hostedai_AdminServicesTabFields(array $params)
             $e->getMessage(),
             $e->getTraceAsString()
         );
+    }
+
+    // Fallback path (team/resource-overview lookup failed or threw) — still
+    // surface the instance ID/status if it was resolved before the failure.
+    if (isset($instanceId)) {
+        return [
+            'GPU Instance ID' => $instanceId ?: 'No instance',
+            'Instance Status' => $instanceStatus,
+        ];
     }
     return array();
 }
@@ -963,30 +1073,28 @@ function hostedai_ClientArea(array $params)
             require(__DIR__ . '/lang/english.php');
         }
 
-        $key = $params['customfields']['team_id'];
-        if($key != '') {
-            $getTeamdata = $helper->getTeamDetail($key);
+        $teamId = $helper->resolveTeamId($params);
+        if(!empty($teamId)) {
+            $getTeamdata = $helper->getTeamDetail($teamId);
 
-            $getTeamdata = $helper->getTeamDetail($key);
-    
             if($getTeamdata && $getTeamdata['httpcode'] == 200)
             {
-                $getTeamMembers = $helper->getTeamMembers($key);
-    
+                $getTeamMembers = $helper->getTeamMembers($teamId);
+
                 $responseData  = [
                     'name' => $getTeamdata['result']->team->name,
-                    'teamId' =>$key,
+                    'teamId' => $teamId,
                 ];
-    
-                $getResourceOverview = $helper->getResourceOverview($key); 
-                
+
+                $getResourceOverview = $helper->getResourceOverview($teamId);
+
                 $templateFile = 'templates/manage.tpl';
-    
+
                 if($getResourceOverview['httpcode'] == 200) {
 
                     $resourceOverviewData = $getResourceOverview['result'];
 
-                    foreach ($resourceOverviewData as $key => $resource) {
+                    foreach ($resourceOverviewData as $resourceKey => $resource) {
                         if (isset($resource->available) && $resource->available > 0) {
                             $resource->percent = ($resource->used / $resource->available) * 100;
                         } else {
@@ -995,11 +1103,7 @@ function hostedai_ClientArea(array $params)
                     }
 
                     // ── GPU Pool data ─────────────────────────────────────────
-                    // NOTE: $key was overwritten by the foreach above.
-                    // Read team ID from $responseData['teamId'] which was stored
-                    // before the loop ran.
                     $poolId           = (int)($params['configoption10'] ?? 0);
-                    $teamId           = $responseData['teamId'];
                     $poolData         = null;
                     $subscriptionData = null;
                     $instancesData    = [];

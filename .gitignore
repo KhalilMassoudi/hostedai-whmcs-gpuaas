@@ -54,3 +54,4 @@ node_modules/
 # Composer vendor (if added later)
 vendor/
 composer.lock
+
