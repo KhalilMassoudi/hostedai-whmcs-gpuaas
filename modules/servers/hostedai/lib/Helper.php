@@ -1011,6 +1011,56 @@ class Helper
     }
 
     /**
+     * Get running hours for an instance in an arbitrary time window.
+     * Sums "Subscription Rate".hour_consumption across all hourly intervals
+     * (the "GPU" hour_consumption field is always 0 on this API and must not
+     * be used for billing).
+     *
+     * @param string $instanceId
+     * @param string $startDateTime 'Y-m-d\TH:i' — already formatted by caller, UTC, no seconds
+     * @param string $endDateTime   'Y-m-d\TH:i' — already formatted by caller, UTC, no seconds
+     * @return float|null Total running hours, or null on failure.
+     */
+    public function getRunningHours($instanceId, $startDateTime, $endDateTime)
+    {
+        try {
+            $start = urlencode($startDateTime);
+            $end   = urlencode($endDateTime);
+            $endpoint = 'instance-billing/' . $instanceId . '/'
+                      . $start . '/' . $end . '/hourly?timezone=utc';
+
+            $resp = $this->curlCall('GET', 'getRunningHours', $endpoint, '');
+            if ($resp['httpcode'] != 200 || empty($resp['result'])) {
+                return null;
+            }
+
+            $result = $resp['result'];
+            // Navigate: billing_info.instances.{id}.intervals
+            $instances = $result->billing_info->instances ?? null;
+            if (!$instances) {
+                return 0.0;
+            }
+
+            $inst = $instances->{$instanceId} ?? null;
+            if (!$inst || empty($inst->intervals)) {
+                return 0.0;
+            }
+
+            $totalHours = 0.0;
+            foreach ($inst->intervals as $timestamp => $interval) {
+                $subRate = $interval->Resources->{'Subscription Rate'} ?? null;
+                if ($subRate && isset($subRate->hour_consumption)) {
+                    $totalHours += (float) $subRate->hour_consumption;
+                }
+            }
+            return $totalHours;
+        } catch (\Exception $e) {
+            logActivity('hostedai: getRunningHours error: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
      * Get instance SSH credentials
      * GET /instance/{instanceId}/credentials
      */

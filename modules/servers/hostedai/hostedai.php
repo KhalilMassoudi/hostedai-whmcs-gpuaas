@@ -340,6 +340,25 @@ function hostedai_ConfigOptions(array $params)
             'Description' => 'JSON map of recipe names (as they appear in the "AI Environment" Configurable Option) to service UUIDs.',
         ),
 
+        // configoption19 — usage-based billing: base $/hour for this product
+        'usage_base_rate' => array(
+            'FriendlyName' => 'Base Hourly Rate',
+            'Type' => 'text',
+            'Size' => '10',
+            'Default' => '0.50',
+            'Description' => 'USD charged per hour the instance is running (base rate, before recipe surcharge). Used by hostedai_usage_cron.php.',
+        ),
+
+        // configoption20 — usage-based billing: recipe name -> extra $/hour
+        'usage_recipe_rate_map' => array(
+            'FriendlyName' => 'Recipe Hourly Rate Map',
+            'Type' => 'textarea',
+            'Rows' => '5',
+            'Cols' => '50',
+            'Default' => '{"No Recipe":0,"vLLM TinyLlama":0.20,"Ollama":0.15}',
+            'Description' => 'JSON map of recipe name -> extra USD/hour added on top of the Base Hourly Rate.',
+        ),
+
     );
 
 }
