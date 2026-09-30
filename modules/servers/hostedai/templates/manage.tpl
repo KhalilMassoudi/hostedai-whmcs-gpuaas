@@ -643,7 +643,7 @@
             </button>
             <button type="button" onclick="copyToClipboard('ssh-password', this)"
               class="gpu-btn gpu-btn-restart" style="padding:3px 10px;font-size:12px">
-              &#128203; Copy
+              Copy
             </button>
           </td>
         </tr>
@@ -654,7 +654,7 @@
             &nbsp;
             <button type="button" onclick="copyToClipboard('ssh-command-value', this)"
               class="gpu-btn gpu-btn-restart" style="padding:3px 10px;font-size:12px;vertical-align:middle">
-              &#128203; Copy
+              Copy
             </button>
           </td>
         </tr>
