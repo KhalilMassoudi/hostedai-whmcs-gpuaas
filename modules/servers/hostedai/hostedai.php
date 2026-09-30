@@ -644,26 +644,7 @@ function hostedai_CreateAccount(array $params)
         // unchanged. Existing admin-fixed products simply don't have these
         // option groups assigned, so this is a no-op for them.
         $clientChoiceMapJson = $params['configoption24'] ?? '';
-        $clientChoiceMap = [];
-        if (!empty(trim($clientChoiceMapJson))) {
-            // WHMCS's admin textarea HTML-encodes this field on save (e.g.
-            // `"` becomes the literal text `&quot;`) and hands that encoded
-            // form straight through to the module without decoding it back
-            // — confirmed via hex dump, not a smart-quotes issue. Decode
-            // entities first, then also normalize typographic quotes/nbsp
-            // in case of a copy-paste artifact on top of that, so a data
-            // round-trip through the admin UI can't silently break every
-            // client-choice lookup below.
-            $normalized = html_entity_decode($clientChoiceMapJson, ENT_QUOTES | ENT_HTML5);
-            $normalized = strtr($normalized, [
-                "\xE2\x80\x9C" => '"', // “
-                "\xE2\x80\x9D" => '"', // ”
-                "\xE2\x80\x98" => "'", // ‘
-                "\xE2\x80\x99" => "'", // ’
-                "\xC2\xA0"     => ' ', // non-breaking space
-            ]);
-            $clientChoiceMap = json_decode($normalized, true) ?? [];
-        }
+        $clientChoiceMap = Helper::decodeAdminJsonMap($clientChoiceMapJson);
 
         // trim() guards against stray leading/trailing whitespace in the
         // Configurable Option's saved name (a WHMCS data-entry quirk that
@@ -705,10 +686,7 @@ function hostedai_CreateAccount(array $params)
 
         // Try configoption18 override first
         $recipeMapJson = $params['configoption18'] ?? '';
-        $recipeMap = [];
-        if (!empty(trim($recipeMapJson))) {
-            $recipeMap = json_decode($recipeMapJson, true) ?? [];
-        }
+        $recipeMap = Helper::decodeAdminJsonMap($recipeMapJson);
         // Fall back to hardcoded map if configoption empty or invalid
         if (empty($recipeMap)) {
             $recipeMap = $defaultRecipeMap;
@@ -748,6 +726,11 @@ function hostedai_CreateAccount(array $params)
                 $instanceId = $instanceResponse['result'];
                 $helper->savePoolSubscriptionId($serviceId, $instanceId);
                 $helper->saveRecipeNote($serviceId, $selectedRecipe);
+                // The instance's real region — may differ from configoption16
+                // when a client-choice GPU Accelerator override applied above.
+                // Later actions (e.g. creating a shared volume post-creation)
+                // must use this, not re-read the admin-fixed default.
+                $helper->saveRegionNote($serviceId, $regionId);
 
                 // Surface the instance ID in the service's domain field so it's
                 // visible/searchable in the client and admin service lists.
@@ -759,10 +742,7 @@ function hostedai_CreateAccount(array $params)
 
                 // ── SHARED VOLUME (optional, client-selected at order time) ──
                 $sharedStorageMapJson = $params['configoption21'] ?? '';
-                $sharedStorageMap = [];
-                if (!empty(trim($sharedStorageMapJson))) {
-                    $sharedStorageMap = json_decode($sharedStorageMapJson, true) ?? [];
-                }
+                $sharedStorageMap = Helper::decodeAdminJsonMap($sharedStorageMapJson);
 
                 $selectedSharedStorage = $params['configoptions']['Shared Storage'] ?? 'None';
                 $sharedStorageBlockId  = $sharedStorageMap[$selectedSharedStorage] ?? '';
@@ -1260,23 +1240,30 @@ function hostedai_ClientArea(array $params)
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_shared_volume'])) {
             $sharedVolumeId = $helper->getSharedVolumeIdFromNotes($params['serviceid']);
             if (!empty($sharedVolumeId)) {
-                $helper->deleteSharedVolume($sharedVolumeId);
-                $helper->saveSharedVolumeId($params['serviceid'], '');
-                logActivity('hostedai: client deleted shared volume ' . $sharedVolumeId);
+                $deleteVolResponse = $helper->deleteSharedVolume($sharedVolumeId);
+                if ($deleteVolResponse['httpcode'] == 200 || $deleteVolResponse['httpcode'] == 204) {
+                    $helper->saveSharedVolumeId($params['serviceid'], '');
+                    logActivity('hostedai: client deleted shared volume ' . $sharedVolumeId);
+                } else {
+                    logActivity('hostedai: client shared volume deletion failed for ' . $sharedVolumeId
+                        . ' (HTTP ' . ($deleteVolResponse['httpcode'] ?? '?') . ') — note left in place so it stays tracked.');
+                }
             }
         }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_shared_volume'])) {
             $sharedStorageMapJson = $params['configoption21'] ?? '';
-            $sharedStorageMap = [];
-            if (!empty(trim($sharedStorageMapJson))) {
-                $sharedStorageMap = json_decode($sharedStorageMapJson, true) ?? [];
-            }
+            $sharedStorageMap = Helper::decodeAdminJsonMap($sharedStorageMapJson);
 
             $selectedSharedStorage = $_POST['shared_storage_choice'] ?? '';
             $newStorageBlockId = $sharedStorageMap[$selectedSharedStorage] ?? '';
-            $newRegionId       = (int)($params['configoption16'] ?? 5);
-            $newVolumeTeamId   = $helper->resolveTeamId($params);
+            // The instance's actual region (saved at CreateAccount time, which
+            // may have been client-choice-overridden away from configoption16)
+            // — fall back to the admin default only for services provisioned
+            // before this note existed.
+            $savedRegionId = $helper->getRegionIdFromNotes($params['serviceid']);
+            $newRegionId   = $savedRegionId !== null ? $savedRegionId : (int) ($params['configoption16'] ?? 5);
+            $newVolumeTeamId = $helper->resolveTeamId($params);
 
             if (!empty($newStorageBlockId) && !empty($newVolumeTeamId)) {
                 $volumeResponse = $helper->createSharedVolume(
@@ -1433,11 +1420,7 @@ function hostedai_ClientArea(array $params)
                     );
 
                     $sharedStorageOptionsJson = $params['configoption21'] ?? '';
-                    $sharedStorageOptions = [];
-                    if (!empty(trim($sharedStorageOptionsJson))) {
-                        $decodedStorageMap = json_decode($sharedStorageOptionsJson, true) ?? [];
-                        $sharedStorageOptions = array_keys($decodedStorageMap);
-                    }
+                    $sharedStorageOptions = array_keys(Helper::decodeAdminJsonMap($sharedStorageOptionsJson));
 
                     $instanceDetails     = null;
                     $instanceStats       = null;
