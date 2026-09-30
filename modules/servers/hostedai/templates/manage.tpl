@@ -641,12 +641,21 @@
               class="gpu-btn gpu-btn-restart" style="padding:3px 10px;font-size:12px">
               Show
             </button>
+            <button type="button" onclick="copyToClipboard('ssh-password', this)"
+              class="gpu-btn gpu-btn-restart" style="padding:3px 10px;font-size:12px">
+              &#128203; Copy
+            </button>
           </td>
         </tr>
         <tr>
           <th>SSH Command</th>
           <td class="gpu-mono" style="font-size:12px">
-            ssh {$instanceCredentials->username|default:'ubuntu'}@{$instanceCredentials->ip|default:''} -p {$instanceCredentials->port|default:'22'}
+            <span id="ssh-command-value">ssh {$instanceCredentials->username|default:'ubuntu'}@{$instanceCredentials->ip|default:''} -p {$instanceCredentials->port|default:'22'}</span>
+            &nbsp;
+            <button type="button" onclick="copyToClipboard('ssh-command-value', this)"
+              class="gpu-btn gpu-btn-restart" style="padding:3px 10px;font-size:12px;vertical-align:middle">
+              &#128203; Copy
+            </button>
           </td>
         </tr>
       </table>
@@ -758,6 +767,47 @@
   }
   function confirmDelete() {
       return confirm('WARNING: This will permanently delete your instance and all data.\n\nThis cannot be undone.\n\nAre you sure?');
+  }
+
+  function copyToClipboard(elementId, btn) {
+      var el = document.getElementById(elementId);
+      if (!el) {
+          return;
+      }
+      var text = el.textContent.trim();
+      var original = btn.textContent;
+
+      function showCopied() {
+          btn.textContent = 'Copied!';
+          setTimeout(function () { btn.textContent = original; }, 1500);
+      }
+
+      if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(showCopied, function () {
+              hostedaiFallbackCopy(text, showCopied);
+          });
+      } else {
+          hostedaiFallbackCopy(text, showCopied);
+      }
+  }
+
+  function hostedaiFallbackCopy(text, callback) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try {
+          document.execCommand('copy');
+      } catch (e) {
+          // Clipboard access denied/unsupported — nothing more we can do.
+      }
+      document.body.removeChild(ta);
+      if (callback) {
+          callback();
+      }
   }
   </script>
   {/literal}
