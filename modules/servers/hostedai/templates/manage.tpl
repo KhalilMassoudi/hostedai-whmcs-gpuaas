@@ -221,6 +221,29 @@
     margin-left: auto;
 }
 .gpu-btn-delete:hover { background: rgba(248,81,73,0.3); color: #f85149 !important; }
+.gpu-select {
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #ffffff !important;
+}
+.gpu-select option {
+    background: #161b22;
+    color: #ffffff;
+}
+
+/* Account credit */
+.gpu-credit-balance {
+    margin-left: auto;
+    font-size: 18px;
+    font-weight: 700;
+}
+.gpu-credit-balance-positive { color: #3fb950 !important; }
+.gpu-credit-balance-zero { color: #f85149 !important; }
+.gpu-credit-amount-positive { color: #3fb950 !important; }
+.gpu-credit-amount-negative { color: #f85149 !important; }
 
 /* Terminal logs */
 .gpu-terminal {
@@ -299,6 +322,62 @@
         No resource data available
       </div>
       {/foreach}
+    </div>
+  </div>
+
+  <!-- Hosted AI Wallet -->
+  <div class="gpu-section">
+    <div class="gpu-section-header">
+      &#128176; Hosted AI Wallet
+      <span class="gpu-credit-balance {if $walletBalance > 0}gpu-credit-balance-positive{else}gpu-credit-balance-zero{/if}">
+        ${$walletBalance|string_format:"%.2f"}
+      </span>
+      <a href="{$WEB_ROOT}/{$walletTopupUrl}" class="gpu-btn gpu-btn-start" style="margin-left:12px;padding:4px 14px;font-size:12px">
+        &#128181; Recharge Wallet
+      </a>
+    </div>
+    <p style="margin:4px 0 12px;font-size:12px;color:rgba(255,255,255,0.4)">
+      This balance pays for this Hosted AI GPU service's usage only — it is separate from any other account balance.
+    </p>
+    <div class="gpu-section-body" style="padding:0">
+      {if $walletHistory}
+      <div style="max-height:320px;overflow-y:auto">
+      <table class="gpu-members-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Description</th>
+            <th style="text-align:right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {foreach from=$walletHistory item=tx}
+          <tr>
+            <td style="white-space:nowrap">{$tx.date|date_format:"%d %b %Y"}</td>
+            <td>
+              {if $tx.type == 'Usage Deduction'}
+                <span class="gpu-badge gpu-badge-stopped">Usage</span>
+              {elseif $tx.type == 'Top-Up'}
+                <span class="gpu-badge gpu-badge-running">Top-Up</span>
+              {else}
+                <span class="gpu-badge gpu-badge-provisioning">Adjustment</span>
+              {/if}
+            </td>
+            <td>{$tx.description|default:'&#8212;'}</td>
+            <td style="text-align:right;white-space:nowrap" class="{if $tx.isPositive}gpu-credit-amount-positive{else}gpu-credit-amount-negative{/if}">
+              {if $tx.isPositive}+{else}-{/if}${$tx.amount|string_format:"%.2f"}
+            </td>
+          </tr>
+          {/foreach}
+        </tbody>
+      </table>
+      </div>
+      {else}
+      <div class="gpu-section-body">
+        <p class="gpu-info-msg">No wallet activity yet.</p>
+      </div>
+      {/if}
     </div>
   </div>
 
@@ -631,6 +710,33 @@
         </form>
 
       </div>
+    </div>
+  </div>
+
+  <!-- Manage Shared Volume -->
+  <div class="gpu-section">
+    <div class="gpu-section-header">&#128190; Shared Storage</div>
+    <div class="gpu-section-body">
+      {if $sharedVolumeId}
+      <div class="gpu-actions">
+        <form method="post" style="margin:0" onsubmit="return confirm('Delete this shared volume? This cannot be undone.')">
+          <input type="hidden" name="delete_shared_volume" value="1">
+          <button type="submit" class="gpu-btn gpu-btn-delete">&#128465; Delete Shared Volume</button>
+        </form>
+      </div>
+      {elseif $sharedStorageOptions}
+      <form method="post" class="gpu-actions">
+        <select name="shared_storage_choice" class="gpu-select" required>
+          <option value="">Select a storage tier&hellip;</option>
+          {foreach $sharedStorageOptions as $option}
+          <option value="{$option}">{$option}</option>
+          {/foreach}
+        </select>
+        <button type="submit" name="create_shared_volume" value="1" class="gpu-btn gpu-btn-start">&#43; Create Shared Volume</button>
+      </form>
+      {else}
+      <p class="gpu-info-msg">No shared storage tiers are configured for this product.</p>
+      {/if}
     </div>
   </div>
 
