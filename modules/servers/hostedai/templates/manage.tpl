@@ -221,6 +221,14 @@
     margin-left: auto;
 }
 .gpu-btn-delete:hover { background: rgba(248,81,73,0.3); color: #f85149 !important; }
+.gpu-btn:disabled,
+.gpu-btn:disabled:hover {
+    opacity: 0.35;
+    cursor: not-allowed;
+    background: rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.4) !important;
+    border-color: rgba(255,255,255,0.1);
+}
 .gpu-select {
     padding: 8px 12px;
     border-radius: 6px;
@@ -576,16 +584,6 @@
     </div>
   </div>
 
-  <!-- Resource Usage -->
-  <div class="gpu-section">
-    <div class="gpu-section-header">&#128202; Resource Usage</div>
-    <div class="gpu-section-body">
-      <p class="gpu-info-msg">
-        &#128161; Real-time GPU metrics are available directly on your instance. Connect via SSH to monitor usage.
-      </p>
-    </div>
-  </div>
-
   <!-- Current Month Cost -->
   <div class="gpu-section">
     <div class="gpu-section-header">&#128176; Current Month Cost</div>
@@ -700,17 +698,29 @@
 
         <form method="post" style="margin:0">
           <input type="hidden" name="instance_action" value="start">
-          <button type="submit" class="gpu-btn gpu-btn-start">&#9654; Start</button>
+          <button type="submit" class="gpu-btn gpu-btn-start"
+            {if $instanceStatus == 'running'}disabled title="Already running"
+            {elseif $instanceStatus == 'provisioning' || $instanceStatus == 'starting'}disabled title="Instance is starting up"{/if}>
+            &#9654; Start
+          </button>
         </form>
 
         <form method="post" style="margin:0">
           <input type="hidden" name="instance_action" value="stop">
-          <button type="submit" class="gpu-btn gpu-btn-stop">&#9632; Stop</button>
+          <button type="submit" class="gpu-btn gpu-btn-stop"
+            {if $instanceStatus == 'stopped' || $instanceStatus == 'stop'}disabled title="Already stopped"
+            {elseif $instanceStatus == 'provisioning' || $instanceStatus == 'starting'}disabled title="Instance is starting up"{/if}>
+            &#9632; Stop
+          </button>
         </form>
 
         <form method="post" style="margin:0">
           <input type="hidden" name="instance_action" value="restart">
-          <button type="submit" class="gpu-btn gpu-btn-restart">&#8635; Restart</button>
+          <button type="submit" class="gpu-btn gpu-btn-restart"
+            {if $instanceStatus == 'stopped' || $instanceStatus == 'stop'}disabled title="Start the instance first"
+            {elseif $instanceStatus == 'provisioning' || $instanceStatus == 'starting'}disabled title="Instance is starting up"{/if}>
+            &#8635; Restart
+          </button>
         </form>
 
         <form method="post" style="margin:0;margin-left:auto" onsubmit="return confirmDelete()">
