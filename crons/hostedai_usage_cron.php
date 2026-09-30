@@ -133,10 +133,7 @@ try {
             $billingMode = !empty($product->configoption22) ? $product->configoption22 : 'usage';
             $isSubscription = ($billingMode === 'subscription');
 
-            $recipeMap = [];
-            if ($product && !empty(trim((string) $product->configoption20))) {
-                $recipeMap = json_decode($product->configoption20, true) ?: [];
-            }
+            $recipeMap = $product ? Helper::decodeAdminJsonMap($product->configoption20) : [];
 
             $recipe = 'No Recipe';
             if (!empty($service->notes) && preg_match('/recipe:([^\r\n]+)/', $service->notes, $m)) {
