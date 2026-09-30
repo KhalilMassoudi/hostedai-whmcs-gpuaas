@@ -1297,6 +1297,90 @@ class Helper
         return null;
     }
 
+    /**
+     * Write the region_id an instance was actually created in to tblhosting
+     * notes (region_id:{id}). This can differ from the product's admin-fixed
+     * configoption16 when a client-choice GPU Accelerator selection
+     * overrode it at CreateAccount time (see configoption24 handling) — any
+     * later action needing the instance's real region (e.g. creating a
+     * shared volume for it) should read this instead of configoption16.
+     *
+     * @param int $serviceId tblhosting.id
+     * @param int $regionId  Pass empty string to remove the note.
+     */
+    public function saveRegionNote($serviceId, $regionId)
+    {
+        try {
+            $notes = Capsule::table('tblhosting')->where('id', $serviceId)->value('notes');
+            $notes = (string) $notes;
+
+            $notes = preg_replace('/region_id:[^\r\n]*(\r\n|\r|\n)?/', '', $notes);
+            $notes = rtrim($notes);
+
+            if ($regionId !== '') {
+                $notes = ($notes !== '' ? $notes . "\n" : '') . 'region_id:' . $regionId;
+            }
+
+            Capsule::table('tblhosting')->where('id', $serviceId)->update(['notes' => $notes]);
+        } catch (\Exception $e) {
+            logActivity('hostedai: Failed to save region note: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Read the region_id stored in tblhosting notes.
+     *
+     * @param int $serviceId tblhosting.id
+     * @return int|null  Null if no region note was ever saved (e.g. a
+     *                   service provisioned before this note existed) —
+     *                   callers should fall back to configoption16 then.
+     */
+    public function getRegionIdFromNotes($serviceId)
+    {
+        try {
+            $notes = Capsule::table('tblhosting')->where('id', $serviceId)->value('notes');
+            if ($notes && preg_match('/region_id:([^\r\n]+)/', $notes, $matches)) {
+                return (int) trim($matches[1]);
+            }
+        } catch (\Exception $e) {
+            logActivity('hostedai: Failed to read region note: ' . $e->getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Decode a JSON-map admin Configurable-Option-style textarea field
+     * (recipe_map, storage/accelerator/flavor maps, percent/rate maps, ...).
+     *
+     * WHMCS's admin textarea HTML-encodes saved content on top of it (e.g.
+     * `"` becomes the literal text `&quot;`) and hands that encoded form
+     * straight through to the module without decoding it back — confirmed
+     * via hex dump, not a smart-quotes issue. Every JSON map stored in a
+     * Module Settings "Type: textarea" field must go through this before
+     * json_decode(), or it can silently come back null/empty on the exact
+     * data the admin just saved.
+     *
+     * @param string|null $raw
+     * @return array Decoded map, or [] for empty/invalid input.
+     */
+    public static function decodeAdminJsonMap($raw)
+    {
+        if (empty(trim((string) $raw))) {
+            return [];
+        }
+
+        $normalized = html_entity_decode($raw, ENT_QUOTES | ENT_HTML5);
+        $normalized = strtr($normalized, [
+            "\xE2\x80\x9C" => '"', // “
+            "\xE2\x80\x9D" => '"', // ”
+            "\xE2\x80\x98" => "'", // ‘
+            "\xE2\x80\x99" => "'", // ’
+            "\xC2\xA0"     => ' ', // non-breaking space
+        ]);
+
+        return json_decode($normalized, true) ?? [];
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
 
     /* Retrieve the Curl API response.
@@ -1373,14 +1457,6 @@ class Helper
 
         if ($data == '') {
             $data = ['url' => $baseUrl . $endpoint];
-        }
-
-        if ($action == 'suspendHostedaiTeam') {
-            $response = json_encode(['response' => 'Hostedai team suspended successfully.']);
-        } elseif ($action == 'unsuspendHostedaiTeam') {
-            $response = json_encode(['response' => 'Hostedai team unsuspended successfully.']);
-        } elseif ($action == 'terminateHostedaiTeam') {
-            $response = json_encode(['response' => 'Hostedai team terminated successfully.']);
         }
 
         if ($returnRaw) {
