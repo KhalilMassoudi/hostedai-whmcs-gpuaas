@@ -361,14 +361,16 @@ function hostedai_ConfigOptions(array $params)
             'Description' => 'Extra flat USD/hour on top of Hosted AI\'s own vendor cost. Leave at 0 unless you want a separate flat platform fee — the Hosted AI Pricing Policy already carries your margin. Used by hostedai_usage_cron.php.',
         ),
 
-        // configoption20 — usage-based billing: recipe name -> extra $/hour
-        'usage_recipe_rate_map' => array(
-            'FriendlyName' => 'Recipe Hourly Rate Map',
+        // configoption20 — usage-based billing: recipe name -> ONE-TIME setup
+        // fee, charged once at CreateAccount (not per hour — clients pay
+        // once for e.g. an Ollama setup, not again every billing window).
+        'usage_recipe_setup_fee_map' => array(
+            'FriendlyName' => 'Recipe Setup Fee Map',
             'Type' => 'textarea',
             'Rows' => '5',
             'Cols' => '50',
-            'Default' => '{"No Recipe":0,"vLLM TinyLlama":0.15,"Ollama":0}',
-            'Description' => 'JSON map of recipe name -> extra USD/hour added on top of the Base Hourly Rate.',
+            'Default' => '{"No Recipe":0,"vLLM TinyLlama":5,"Ollama":3}',
+            'Description' => 'JSON map of recipe name -> ONE-TIME USD setup fee, deducted from the Hosted AI Wallet once when the instance is created (not per hour). Usage-Based Billing Mode only.',
         ),
 
         // configoption21 — Shared Storage option name -> storage_block_id map.
@@ -406,7 +408,8 @@ function hostedai_ConfigOptions(array $params)
         // configoption23 — Fixed Subscription billing: recipe name -> percent
         // surcharge on top of this product's recurring amount. Only used
         // when Billing Mode (configoption22) is "subscription" — the
-        // usage-based equivalent is configoption20 (a $/hour map instead).
+        // usage-based equivalent is configoption20 (a one-time setup fee,
+        // charged once at CreateAccount, instead of a recurring %/invoice).
         // Applied by includes/hooks/hostedai_recipe_surcharge.php at invoice
         // time, computed fresh from the product's *current* recurring
         // amount each time, so it stays correct if the base price changes.
@@ -739,6 +742,37 @@ function hostedai_CreateAccount(array $params)
                     ->update(['domain' => $instanceId]);
 
                 logActivity('hostedai: Instance created successfully: ' . $instanceId);
+
+                // ── ONE-TIME RECIPE SETUP FEE (Usage-Based products only) ────
+                // configoption20 is a one-time setup price per recipe — the
+                // client pays once for e.g. an Ollama setup, not again every
+                // hour the instance runs. Fixed Subscription products use a
+                // separate, percentage-of-recurring surcharge instead (see
+                // includes/hooks/hostedai_recipe_surcharge.php), applied via
+                // invoice rather than the wallet, so this block skips them.
+                // ref=recipe_setup_{serviceId} makes this idempotent: a
+                // retried CreateAccount (failed provisioning attempt,
+                // admin re-triggering Create) can never charge it twice.
+                $billingMode = !empty($params['configoption22']) ? $params['configoption22'] : 'usage';
+                if ($billingMode !== 'subscription') {
+                    $recipeFeeMap = Helper::decodeAdminJsonMap($params['configoption20'] ?? '');
+                    $recipeFee = (float) ($recipeFeeMap[$selectedRecipe] ?? 0);
+                    if ($recipeFee > 0) {
+                        require_once __DIR__ . '/../../../includes/hostedai_wallet.php';
+                        $recipeFeeDebited = hostedai_wallet_debit(
+                            $clientId,
+                            $recipeFee,
+                            "Hosted AI recipe setup: {$selectedRecipe} (service #{$serviceId})",
+                            'recipe_setup_' . $serviceId
+                        );
+                        if ($recipeFeeDebited) {
+                            logActivity("hostedai: charged one-time recipe setup fee \${$recipeFee} for '{$selectedRecipe}' (service {$serviceId})");
+                        } else {
+                            logActivity("hostedai: recipe setup fee debit failed for service {$serviceId} (client {$clientId}) — wallet may be exhausted");
+                        }
+                    }
+                }
+                // ── END ONE-TIME RECIPE SETUP FEE ────────────────────────────
 
                 // ── SHARED VOLUME (optional, client-selected at order time) ──
                 $sharedStorageMapJson = $params['configoption21'] ?? '';

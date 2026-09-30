@@ -20,15 +20,17 @@ $helper = new Helper();
 /**
  * Usage-based billing cron for hostedai.
  *
- * Meant to run hourly. For every Active hostedai service it fetches the
- * running hours and vendor cost reported by the Hosted AI billing API since
- * the last successful poll. Charge = vendor cost (driven by the team's
- * Pricing Policy on Hosted AI's side — already includes our margin once a
- * real, non-zero policy is assigned) + our own WHMCS-side recipe surcharge
- * (Hosted AI's pricing policy has no concept of "recipe"). That total is
- * deducted from the client's Hosted AI Wallet balance — a pool fully
- * separate from WHMCS's native account credit — which also drives the
- * warn/suspend logic on low/exhausted wallet balance.
+ * Meant to run every 5 minutes. For every Active hostedai service it fetches
+ * the running hours and vendor cost reported by the Hosted AI billing API
+ * since the last successful poll. Charge = vendor cost (driven by the
+ * team's Pricing Policy on Hosted AI's side — already includes our margin
+ * once a real, non-zero policy is assigned) + our own flat WHMCS-side
+ * platform rate (configoption19, $/hour). Recipe pricing is NOT part of
+ * this recurring charge — it's a one-time setup fee charged once at
+ * CreateAccount instead (see hostedai.php), not billed again every window.
+ * The total here is deducted from the client's Hosted AI Wallet balance —
+ * a pool fully separate from WHMCS's native account credit — which also
+ * drives the warn/suspend logic on low/exhausted wallet balance.
  *
  * Never double-bills: last_billed_at only advances after a confirmed charge
  * (or a confirmed zero-charge window). On any billing-API failure the window
@@ -122,8 +124,12 @@ try {
             }
 
             // ── Rate (needed for both charging and the credit-check below) ─
+            // Recipe pricing is NOT part of this: it's a one-time setup fee
+            // charged once at CreateAccount (see hostedai.php), not a
+            // recurring per-hour charge — clients pay once for e.g. an
+            // Ollama setup, not again every billing window it runs.
             $product = Capsule::table('tblproducts')->where('id', $service->packageid)->first();
-            $baseRate = (float) ($product->configoption19 ?? 0);
+            $rate = (float) ($product->configoption19 ?? 0);
 
             // Fixed Subscription products are billed entirely through their
             // WHMCS recurring invoice (+ native overdue-suspension automation,
@@ -132,15 +138,6 @@ try {
             // suspended for having $0 credit they were never meant to fund.
             $billingMode = !empty($product->configoption22) ? $product->configoption22 : 'usage';
             $isSubscription = ($billingMode === 'subscription');
-
-            $recipeMap = $product ? Helper::decodeAdminJsonMap($product->configoption20) : [];
-
-            $recipe = 'No Recipe';
-            if (!empty($service->notes) && preg_match('/recipe:([^\r\n]+)/', $service->notes, $m)) {
-                $recipe = trim($m[1]);
-            }
-            $recipeRate = (float) ($recipeMap[$recipe] ?? 0);
-            $rate = $baseRate + $recipeRate;
 
             // ── Step 3c: time window ─────────────────────────────────────
             $startDt = new \DateTime($usageRow->last_billed_at, $utc);
@@ -188,10 +185,10 @@ try {
                 // ── Step 3e/f: compute charge ────────────────────────────
                 // Charge = vendor cost reported by Hosted AI for this window
                 // (driven by the team's Pricing Policy — already includes our
-                // margin once a real, non-zero policy is assigned) PLUS our
-                // own WHMCS-side recipe surcharge (Hosted AI's pricing policy
-                // has no concept of "recipe", since every recipe currently
-                // maps to the same service_id for this pool/service).
+                // margin once a real, non-zero policy is assigned) PLUS the
+                // admin's flat platform rate (configoption19, $/hour). Recipe
+                // pricing is a separate one-time fee charged once at
+                // CreateAccount — not part of this recurring rate.
                 //
                 // WHMCS AddCredit only accepts 2 decimal places, but hourly
                 // usage at low rates produces fractions of a cent. Never
@@ -211,7 +208,7 @@ try {
                         $debited = hostedai_wallet_debit(
                             $service->userid,
                             $chargeable,
-                            "Hosted AI usage: {$hours}h, vendor cost \${$vendorCost} + recipe surcharge \${$rate}/h (service #{$serviceId}, {$startStr} to {$endStr})",
+                            "Hosted AI usage: {$hours}h, vendor cost \${$vendorCost} + platform rate \${$rate}/h (service #{$serviceId}, {$startStr} to {$endStr})",
                             $walletRef
                         );
 
@@ -226,7 +223,7 @@ try {
                                     'updated_at'      => $nowStr,
                                 ]);
                             $totalChargedThisRun += $chargeable;
-                            logActivity("hostedai usage cron: charged \${$chargeable} ({$hours}h, vendor cost \${$vendorCost} + recipe \${$rate}/h, remainder \${$remainder} banked) from wallet of client {$service->userid} for service {$serviceId}");
+                            logActivity("hostedai usage cron: charged \${$chargeable} ({$hours}h, vendor cost \${$vendorCost} + platform rate \${$rate}/h, remainder \${$remainder} banked) from wallet of client {$service->userid} for service {$serviceId}");
                         } else {
                             logActivity("hostedai usage cron: wallet debit failed for client {$service->userid} service {$serviceId} — will retry window next run");
                             // Do NOT advance last_billed_at — retry the whole window next run.
@@ -245,7 +242,7 @@ try {
                         logActivity("hostedai usage cron: banked \${$totalDue} (below \$0.01 minimum) for service {$serviceId}");
                     }
                 } else {
-                    // Zero vendor cost and zero recipe surcharge — nothing to
+                    // Zero vendor cost and zero platform rate — nothing to
                     // charge, but hours were real; advance.
                     Capsule::table('mod_hostedai_usage')
                         ->where('service_id', $serviceId)
@@ -326,7 +323,7 @@ try {
             }
 
             // A service can be a "real" cost either through the admin-set flat
-            // $rate (configoption19/recipe) or purely through Hosted AI's own
+            // $rate (configoption19) or purely through Hosted AI's own
             // vendor-cost billing (many usage-based products run $rate=0 and
             // let vendor cost drive 100% of the charge — see Step 3e/f above).
             // Gating suspension on $rate alone meant those services could run
