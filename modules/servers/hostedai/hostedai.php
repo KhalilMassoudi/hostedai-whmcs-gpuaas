@@ -1263,7 +1263,11 @@ function hostedai_ClientArea(array $params)
         $walletHistory = [];
         try {
             $walletBalance = hostedai_wallet_get_balance($params['userid']);
-            $walletHistory = hostedai_wallet_get_history($params['userid']);
+            // Balance is the real shared-wallet total (correct, spans every
+            // usage-mode service this client runs); history shown here is
+            // scoped to just this service so its page doesn't display
+            // another service's usage lines.
+            $walletHistory = hostedai_wallet_get_history($params['userid'], 100, $params['serviceid']);
         } catch (\Exception $e) {
             logActivity('hostedai: wallet history lookup failed: ' . $e->getMessage());
         }

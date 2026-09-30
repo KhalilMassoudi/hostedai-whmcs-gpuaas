@@ -337,7 +337,7 @@
       </a>
     </div>
     <p style="margin:4px 0 12px;font-size:12px;color:rgba(255,255,255,0.4)">
-      This balance pays for this Hosted AI GPU service's usage only — it is separate from any other account balance.
+      This balance is shared across all your Pay-As-You-Go Hosted AI services — it is separate from any other account balance. The activity below is filtered to this service.
     </p>
     <div class="gpu-section-body" style="padding:0">
       {if $walletHistory}

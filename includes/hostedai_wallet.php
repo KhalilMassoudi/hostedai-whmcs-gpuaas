@@ -106,14 +106,32 @@ function hostedai_wallet_get_balance($clientId)
 /**
  * Itemized wallet ledger for a client, newest first, formatted for direct
  * use in a {foreach} template loop (date/description/amount/type/isPositive).
+ *
+ * The wallet is one shared pool per client, not per service — a top-up or
+ * adjustment funds the whole wallet, so those always show. Pass $serviceId
+ * when rendering this on a single service's page (e.g. manage.tpl) to also
+ * restrict the usage/setup-fee rows to that service, instead of showing
+ * every usage-mode service this client has ever run. There's no dedicated
+ * service_id column on the ledger — usage/setup rows tag their service in
+ * the free-text description ("... (service #123, ...)"), so this matches
+ * against that instead.
  */
-function hostedai_wallet_get_history($clientId, $limit = 100)
+function hostedai_wallet_get_history($clientId, $limit = 100, $serviceId = null)
 {
     hostedai_wallet_ensure_tables();
 
-    $rows = Capsule::table('mod_hostedai_wallet_ledger')
-        ->where('client_id', $clientId)
-        ->orderBy('created_at', 'desc')
+    $query = Capsule::table('mod_hostedai_wallet_ledger')->where('client_id', $clientId);
+
+    if ($serviceId !== null) {
+        $serviceId = (int) $serviceId;
+        $query->where(function ($q) use ($serviceId) {
+            $q->where('type', '!=', 'usage')
+              ->orWhere('description', 'like', '%(service #' . $serviceId . ',%')
+              ->orWhere('description', 'like', '%(service #' . $serviceId . ')%');
+        });
+    }
+
+    $rows = $query->orderBy('created_at', 'desc')
         ->orderBy('id', 'desc')
         ->limit($limit)
         ->get();
