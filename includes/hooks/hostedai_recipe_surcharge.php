@@ -1,6 +1,7 @@
 <?php
 
 use WHMCS\Database\Capsule;
+use WHMCS\Module\Server\HosteDai\Helper;
 
 if (!defined('WHMCS')) {
     die('This file cannot be accessed directly');
@@ -36,7 +37,16 @@ add_hook('InvoiceCreation', 1, function ($vars) {
             return;
         }
 
+        $invoice = Capsule::table('tblinvoices')->where('id', $invoiceId)->first();
+        if (!$invoice) {
+            return;
+        }
+        $taxRate  = (float) ($invoice->taxrate ?? 0);
+        $taxRate2 = (float) ($invoice->taxrate2 ?? 0);
+
         $totalSurcharge = 0.0;
+        $totalTax = 0.0;
+        $totalTax2 = 0.0;
 
         foreach ($items as $item) {
             $serviceId = $item->relid;
@@ -60,10 +70,7 @@ add_hook('InvoiceCreation', 1, function ($vars) {
             }
 
             $percentMapJson = $product->configoption23 ?? '';
-            $percentMap = [];
-            if (!empty(trim($percentMapJson))) {
-                $percentMap = json_decode($percentMapJson, true) ?: [];
-            }
+            $percentMap = Helper::decodeAdminJsonMap($percentMapJson);
             if (empty($percentMap)) {
                 continue;
             }
@@ -90,15 +97,34 @@ add_hook('InvoiceCreation', 1, function ($vars) {
                 'duedate'     => $item->duedate,
             ]);
 
-            $totalSurcharge += $surcharge;
+            // The new line copies the original item's taxed flag, so its tax
+            // needs to be computed and added too — bumping subtotal/total by
+            // the surcharge alone would under-collect tax on a taxed client.
+            $itemTax = 0.0;
+            $itemTax2 = 0.0;
+            if (!empty($item->taxed)) {
+                if ($taxRate > 0) {
+                    $itemTax = round($surcharge * $taxRate / 100, 2);
+                }
+                if ($taxRate2 > 0) {
+                    $itemTax2 = round($surcharge * $taxRate2 / 100, 2);
+                }
+            }
 
-            logActivity("hostedai: invoice #{$invoiceId} service #{$serviceId} — added {$percent}% recipe surcharge (\${$surcharge}) for recipe '{$recipe}'");
+            $totalSurcharge += $surcharge;
+            $totalTax += $itemTax;
+            $totalTax2 += $itemTax2;
+
+            logActivity("hostedai: invoice #{$invoiceId} service #{$serviceId} — added {$percent}% recipe surcharge (\${$surcharge}, tax \${$itemTax}/\${$itemTax2}) for recipe '{$recipe}'");
         }
 
         if ($totalSurcharge > 0) {
+            $totalDue = $totalSurcharge + $totalTax + $totalTax2;
             Capsule::table('tblinvoices')->where('id', $invoiceId)->update([
-                'subtotal' => Capsule::raw("subtotal + {$totalSurcharge}"),
-                'total'    => Capsule::raw("total + {$totalSurcharge}"),
+                'subtotal' => Capsule::raw('subtotal + ' . number_format($totalSurcharge, 2, '.', '')),
+                'tax'      => Capsule::raw('tax + ' . number_format($totalTax, 2, '.', '')),
+                'tax2'     => Capsule::raw('tax2 + ' . number_format($totalTax2, 2, '.', '')),
+                'total'    => Capsule::raw('total + ' . number_format($totalDue, 2, '.', '')),
             ]);
         }
     } catch (\Exception $e) {
