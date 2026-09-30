@@ -67,7 +67,7 @@ class Helper
 
             return $curlResponse;
         } catch (Exception $e) {
-            logActivity('Error in function (getPolicyItems), Error: ', $e->getMessage());
+            logActivity('Error in function (getPolicyItems), Error: ' . $e->getMessage());
         }
     }
 
@@ -80,7 +80,8 @@ class Helper
 
             return $curlResponse;
         } catch (Exception $e) {
-            logActivity('Unable to create Hostedai Team, Error: ', $e->getMessage());
+            logActivity('Unable to create Hostedai Team, Error: ' . $e->getMessage());
+            return ['httpcode' => 500, 'result' => (object)['message' => $e->getMessage()]];
         }
     }
 
@@ -125,7 +126,7 @@ class Helper
 
             return $curlResponse;
         } catch (Exception $e) {
-            logActivity('Unable to get team details, Error: ', $e->getMessage());
+            logActivity('Unable to get team details, Error: ' . $e->getMessage());
         }
     }
 
@@ -138,7 +139,7 @@ class Helper
 
             return $curlResponse;
         } catch (Exception $e) {
-            logActivity('Unable to get team details, Error: ', $e->getMessage());
+            logActivity('Unable to get team details, Error: ' . $e->getMessage());
         }
     }
 
@@ -151,7 +152,7 @@ class Helper
 
             return $curlResponse;
         } catch (Exception $e) {
-            logActivity('Unable to get Resource Overview, Error: ', $e->getMessage());
+            logActivity('Unable to get Resource Overview, Error: ' . $e->getMessage());
         }
     }
 
@@ -164,7 +165,7 @@ class Helper
 
             return $curlResponse;
         } catch (Exception $e) {
-            logActivity('Failed to Suspend hostedai team, Error: ', $e->getMessage());
+            logActivity('Failed to Suspend hostedai team, Error: ' . $e->getMessage());
         }
     }
 
@@ -177,7 +178,7 @@ class Helper
 
             return $curlResponse;
         } catch (Exception $e) {
-            logActivity('Failed to Unsuspend hostedai team, Error: ', $e->getMessage());
+            logActivity('Failed to Unsuspend hostedai team, Error: ' . $e->getMessage());
         }
     }
 
@@ -190,7 +191,7 @@ class Helper
 
             return $curlResponse;
         } catch (Exception $e) {
-            logActivity('Failed to Terminate hostedai team, Error: ', $e->getMessage());
+            logActivity('Failed to Terminate hostedai team, Error: ' . $e->getMessage());
         }
     }
 
@@ -235,7 +236,7 @@ class Helper
 
             return $curlResponse;
         } catch (Exception $e) {
-            logActivity('Unable to Generate detailed team bill, Error: ', $e->getMessage());
+            logActivity('Unable to Generate detailed team bill, Error: ' . $e->getMessage());
             return ['httpcode' => 500, 'result' => null];
         }
     }
@@ -257,7 +258,7 @@ class Helper
 
             return $curlResponse;
         } catch (Exception $e) {
-            logActivity('Unable to Get workspace billing, Error: ', $e->getMessage());
+            logActivity('Unable to Get workspace billing, Error: ' . $e->getMessage());
             return ['httpcode' => 500, 'result' => null];
         }
     }
@@ -279,7 +280,7 @@ class Helper
 
             return $curlResponse;
         } catch (Exception $e) {
-            logActivity('Unable to Get shared storage billing, Error: ', $e->getMessage());
+            logActivity('Unable to Get shared storage billing, Error: ' . $e->getMessage());
             return ['httpcode' => 500, 'result' => null];
         }
     }
@@ -301,7 +302,7 @@ class Helper
 
             return $curlResponse;
         } catch (Exception $e) {
-            logActivity('Unable to Get GPUaaS pool billing, Error: ', $e->getMessage());
+            logActivity('Unable to Get GPUaaS pool billing, Error: ' . $e->getMessage());
             return ['httpcode' => 500, 'result' => null];
         }
     }
@@ -337,7 +338,7 @@ class Helper
             $results = localAPI($command, $postData);
             return $results;
         } catch (Exception $e) {
-            logActivity('Unable to generate invoice for user ' . $id . ', WHMCS LOCAL API ERROR: ', $e->getMessage());
+            logActivity('Unable to generate invoice for user ' . $id . ', WHMCS LOCAL API ERROR: ' . $e->getMessage());
         }
     }
 
@@ -362,7 +363,7 @@ class Helper
             }
 
         } catch (Exception $e) {
-            logActivity('Failed to Change hostedai team package ID:' .$teamId.  ', Error: ', $e->getMessage());
+            logActivity('Failed to Change hostedai team package ID:' .$teamId.  ', Error: ' . $e->getMessage());
         }
     }
 
@@ -380,7 +381,7 @@ class Helper
             return $curlResponse;
 
         } catch (Exception $e) {
-            logActivity('Failed to Change hostedai team package, Error: ', $e->getMessage());
+            logActivity('Failed to Change hostedai team package, Error: ' . $e->getMessage());
         }
     }
 
@@ -398,7 +399,7 @@ class Helper
             return $curlResponse;
 
         } catch (Exception $e) {
-            logActivity('Failed to Change hostedai team package, Error: ', $e->getMessage());
+            logActivity('Failed to Change hostedai team package, Error: ' . $e->getMessage());
         }
     }
 
@@ -456,7 +457,7 @@ class Helper
 
             return "success";
         } catch (\Exception $e) {
-            logActivity('funtion(insert_hostedai_custom_fields_value) Hostedai Error:', $e->getMessage());
+            logActivity('funtion(insert_hostedai_custom_fields_value) Hostedai Error:' . $e->getMessage());
             return $e->getMessage();
         }
     }
@@ -748,7 +749,7 @@ class Helper
                 'vgpus'          => (int)$vgpus,
                 'shared_volumes' => [],
             ],
-            'public_keys'  => [''],
+            'public_keys'  => [],
             'workspace_id' => (string)$workspaceId,
         ];
 
@@ -1011,17 +1012,20 @@ class Helper
     }
 
     /**
-     * Get running hours for an instance in an arbitrary time window.
-     * Sums "Subscription Rate".hour_consumption across all hourly intervals
-     * (the "GPU" hour_consumption field is always 0 on this API and must not
-     * be used for billing).
+     * Get running hours AND vendor cost for an instance in an arbitrary time
+     * window. Sums "Subscription Rate".hour_consumption (fraction of the hour
+     * running — the "GPU" hour_consumption field is always 0 on this API and
+     * must not be used) and Resources.total_cost (the vendor's own charge for
+     * that interval, driven by whatever Pricing Policy is assigned to the
+     * team — once a real, non-zero policy is set this already includes our
+     * margin) across all hourly intervals in the window.
      *
      * @param string $instanceId
      * @param string $startDateTime 'Y-m-d\TH:i' — already formatted by caller, UTC, no seconds
      * @param string $endDateTime   'Y-m-d\TH:i' — already formatted by caller, UTC, no seconds
-     * @return float|null Total running hours, or null on failure.
+     * @return array|null ['hours' => float, 'cost' => float], or null on failure.
      */
-    public function getRunningHours($instanceId, $startDateTime, $endDateTime)
+    public function getWindowUsage($instanceId, $startDateTime, $endDateTime)
     {
         try {
             $start = urlencode($startDateTime);
@@ -1029,7 +1033,7 @@ class Helper
             $endpoint = 'instance-billing/' . $instanceId . '/'
                       . $start . '/' . $end . '/hourly?timezone=utc';
 
-            $resp = $this->curlCall('GET', 'getRunningHours', $endpoint, '');
+            $resp = $this->curlCall('GET', 'getWindowUsage', $endpoint, '');
             if ($resp['httpcode'] != 200 || empty($resp['result'])) {
                 return null;
             }
@@ -1038,24 +1042,28 @@ class Helper
             // Navigate: billing_info.instances.{id}.intervals
             $instances = $result->billing_info->instances ?? null;
             if (!$instances) {
-                return 0.0;
+                return ['hours' => 0.0, 'cost' => 0.0];
             }
 
             $inst = $instances->{$instanceId} ?? null;
             if (!$inst || empty($inst->intervals)) {
-                return 0.0;
+                return ['hours' => 0.0, 'cost' => 0.0];
             }
 
             $totalHours = 0.0;
+            $totalCost  = 0.0;
             foreach ($inst->intervals as $timestamp => $interval) {
                 $subRate = $interval->Resources->{'Subscription Rate'} ?? null;
                 if ($subRate && isset($subRate->hour_consumption)) {
                     $totalHours += (float) $subRate->hour_consumption;
                 }
+                if (isset($interval->Resources->total_cost)) {
+                    $totalCost += (float) $interval->Resources->total_cost;
+                }
             }
-            return $totalHours;
+            return ['hours' => $totalHours, 'cost' => $totalCost];
         } catch (\Exception $e) {
-            logActivity('hostedai: getRunningHours error: ' . $e->getMessage());
+            logActivity('hostedai: getWindowUsage error: ' . $e->getMessage());
             return null;
         }
     }
@@ -1197,6 +1205,99 @@ class Helper
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    // Shared volumes
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Create a shared volume for a team.
+     * POST /shared-volumes
+     * Body: {name, region_id, storage_block_id, team_id}
+     */
+    public function createSharedVolume($name, $regionId, $storageBlockId, $teamId)
+    {
+        try {
+            $data = [
+                'name'             => (string)$name,
+                'region_id'        => (int)$regionId,
+                'storage_block_id' => (string)$storageBlockId,
+                'team_id'          => (string)$teamId,
+            ];
+            $response = $this->curlCall('POST', 'createSharedVolume', 'shared-volumes', $data);
+
+            $success = ($response['httpcode'] == 200 || $response['httpcode'] == 201)
+                && !empty($response['result']->id);
+
+            return [
+                'httpcode' => $response['httpcode'],
+                'result'   => $response['result'],
+                'success'  => $success,
+            ];
+        } catch (Exception $e) {
+            logActivity('hostedai: Failed to create shared volume: ' . $e->getMessage());
+            return ['httpcode' => 500, 'result' => null, 'success' => false];
+        }
+    }
+
+    /**
+     * Delete a shared volume.
+     * DELETE /shared-volumes/{id}  (id is an integer)
+     */
+    public function deleteSharedVolume($id)
+    {
+        try {
+            $response = $this->curlCall('DELETE', 'deleteSharedVolume', 'shared-volumes/' . (int)$id, '');
+            return $response;
+        } catch (Exception $e) {
+            logActivity('hostedai: Failed to delete shared volume: ' . $e->getMessage());
+            return ['httpcode' => 500, 'result' => null];
+        }
+    }
+
+    /**
+     * Write (or clear) the shared_volume_id note on a hosting record.
+     *
+     * @param int        $serviceId tblhosting.id
+     * @param string|int $volumeId  Pass empty string to remove the note.
+     */
+    public function saveSharedVolumeId($serviceId, $volumeId)
+    {
+        try {
+            $notes = Capsule::table('tblhosting')->where('id', $serviceId)->value('notes');
+            $notes = (string)$notes;
+
+            $notes = preg_replace('/shared_volume_id:[^\r\n]*(\r\n|\r|\n)?/', '', $notes);
+            $notes = rtrim($notes);
+
+            if ($volumeId !== '') {
+                $notes = ($notes !== '' ? $notes . "\n" : '') . 'shared_volume_id:' . $volumeId;
+            }
+
+            Capsule::table('tblhosting')->where('id', $serviceId)->update(['notes' => $notes]);
+        } catch (\Exception $e) {
+            logActivity('hostedai: Failed to save shared volume ID: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Read the shared_volume_id stored in tblhosting notes.
+     *
+     * @param int $serviceId tblhosting.id
+     * @return string|null
+     */
+    public function getSharedVolumeIdFromNotes($serviceId)
+    {
+        try {
+            $notes = Capsule::table('tblhosting')->where('id', $serviceId)->value('notes');
+            if ($notes && preg_match('/shared_volume_id:([^\r\n]+)/', $notes, $matches)) {
+                return trim($matches[1]);
+            }
+        } catch (\Exception $e) {
+            logActivity('hostedai: Failed to read shared volume ID: ' . $e->getMessage());
+        }
+        return null;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
 
     /* Retrieve the Curl API response.
      *
@@ -1236,9 +1337,9 @@ class Helper
 
         curl_setopt($curl, CURLOPT_URL, $baseUrl . $endpoint);
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 15);
         curl_setopt($curl, CURLOPT_MAXREDIRS, 10);
-        curl_setopt($curl, CURLOPT_TIMEOUT, 10);
+        curl_setopt($curl, CURLOPT_TIMEOUT, 60);
         curl_setopt($curl, CURLOPT_FOLLOWLOCATION, 1);
 
         if (isset($this->token) && $this->token != '') {
@@ -1256,7 +1357,7 @@ class Helper
         $curlError = curl_error($curl);
 
         if ($curlError) {
-            logActivity("CURL Error: Connection failed");
+            logActivity("CURL Error: {$action} - {$curlError}");
         }
         if ($httpCode >= 400) {
             logActivity("API Error: HTTP {$httpCode}");
