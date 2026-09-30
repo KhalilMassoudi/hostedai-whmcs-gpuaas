@@ -44,8 +44,50 @@ function hostedai_wallet_ensure_tables()
             $table->string('ref', 100)->nullable();   // idempotency key
             $table->dateTime('created_at');
             $table->index('client_id');
-            $table->index('ref');
+            // Unique (not just indexed): a plain index only stops the app-level
+            // pre-check race documented on hostedai_wallet_apply() below from
+            // being the ONLY guard — this makes double-apply impossible even
+            // if two calls with the same ref race past that check together.
+            // MySQL treats multiple NULL refs as distinct, so unref'd ledger
+            // rows (ref = null) are unaffected.
+            $table->unique('ref', 'mod_hostedai_wallet_ledger_ref_unique');
         });
+        return;
+    }
+
+    hostedai_wallet_ensure_ref_unique_index();
+}
+
+/**
+ * One-time migration for a wallet ledger table created before the ref
+ * column was unique. Cheap to call on every request (a single indexed
+ * information_schema lookup); the ALTER itself only ever runs once, the
+ * first time this fixed code executes against a given database.
+ */
+function hostedai_wallet_ensure_ref_unique_index()
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    try {
+        $indexExists = Capsule::connection()->selectOne(
+            "SELECT 1 FROM information_schema.statistics
+             WHERE table_schema = DATABASE()
+               AND table_name = 'mod_hostedai_wallet_ledger'
+               AND index_name = 'mod_hostedai_wallet_ledger_ref_unique'
+             LIMIT 1"
+        );
+
+        if (!$indexExists) {
+            Capsule::schema()->table('mod_hostedai_wallet_ledger', function ($table) {
+                $table->unique('ref', 'mod_hostedai_wallet_ledger_ref_unique');
+            });
+        }
+    } catch (\Exception $e) {
+        logActivity('hostedai wallet: could not ensure ref unique index: ' . $e->getMessage());
     }
 }
 
@@ -102,7 +144,9 @@ function hostedai_wallet_get_history($clientId, $limit = 100)
  * transaction (guards against a top-up and a usage debit landing at the
  * same moment). When $ref is given, a repeated call with the same $ref is
  * a no-op that still returns true — so a retried cron pass or a duplicate
- * payment webhook can never double-apply the same charge/credit.
+ * payment webhook can never double-apply the same charge/credit. This is
+ * enforced at the database level (a unique index on ref), not just by the
+ * pre-check below, so it holds even if two calls race each other.
  */
 function hostedai_wallet_apply($clientId, $signedAmount, $type, $description, $ref = null)
 {
@@ -152,9 +196,29 @@ function hostedai_wallet_apply($clientId, $signedAmount, $type, $description, $r
 
         return true;
     } catch (\Exception $e) {
+        // The pre-check above is racy by itself (SELECT, then a later INSERT
+        // in a separate transaction) — two near-simultaneous calls with the
+        // same $ref (a duplicate payment webhook, an overlapping cron run)
+        // can both pass it. The ref column's unique index is what actually
+        // stops the double-apply, by rejecting the second INSERT. Treat that
+        // rejection the same as the pre-check hit: already applied, not a
+        // failure — the caller shouldn't retry or alert on it.
+        if ($ref !== null && hostedai_wallet_is_duplicate_ref_error($e)) {
+            return true;
+        }
+
         logActivity('hostedai wallet: apply failed for client ' . $clientId . ': ' . $e->getMessage());
         return false;
     }
+}
+
+/** Whether $e is a DB duplicate-key violation (MySQL error 1062 / SQLSTATE 23000). */
+function hostedai_wallet_is_duplicate_ref_error(\Exception $e)
+{
+    $previous = method_exists($e, 'getPrevious') ? $e->getPrevious() : null;
+    $code = $previous instanceof \Exception ? $previous->getCode() : $e->getCode();
+
+    return (string) $code === '23000' || strpos($e->getMessage(), 'Duplicate entry') !== false;
 }
 
 function hostedai_wallet_credit($clientId, $amount, $description, $ref = null)
