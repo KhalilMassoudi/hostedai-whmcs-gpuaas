@@ -36,18 +36,18 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 1px;
-    color: #555555 !important;
+    color: rgba(255,255,255,0.5) !important;
     margin: 0;
 }
 .gpu-resource-card .card-info .card-value {
     font-size: 20px;
     font-weight: 700;
-    color: #111111 !important;
+    color: #ffffff !important;
     margin: 2px 0 0 0;
 }
 .gpu-resource-card .card-info .card-limit {
     font-size: 11px;
-    color: #777777 !important;
+    color: rgba(255,255,255,0.4) !important;
     margin: 0;
 }
 
