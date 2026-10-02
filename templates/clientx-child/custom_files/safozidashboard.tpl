@@ -121,7 +121,7 @@
                 </a>
             </div>
             {if $hostedaiWalletBalance !== null}
-            <div class="col-6 col-xl-3">
+            <div class="col-6 col-xl-3 hostedai-wallet-tile">
                 <a href="{$WEB_ROOT}/{$hostedaiWalletTopupUrl}" class="tile dash-card-tile green-head">
                     <div class="icon"><img
                             src="{$WEB_ROOT}/templates/{$template}/images/dashboard-images/dash-card-ic.svg"
@@ -129,6 +129,7 @@
                     <div class="content">
                         <div class="d-number stat">${$hostedaiWalletBalance|string_format:"%.2f"}</div>
                         <div class="d-label title">Hosted AI Wallet</div>
+                        <div class="d-label hostedai-wallet-hint">Rechargez votre portefeuille, puis choisissez votre GPU Cloud.</div>
                     </div>
                     <div class="arrow"><img
                             src="{$WEB_ROOT}/templates/{$template}/images/dashboard-images/right-arrow.svg" alt="arrow">
@@ -136,6 +137,28 @@
                 </a>
             </div>
             {/if}
+
+            {literal}
+            <style>
+            /* Hosted AI Wallet tile: on desktop it wraps onto its own new
+               row (5th tile in a 4-per-row grid) with no gap from the row
+               above, since .tiles .row.no-gutters only gets a row-wrap
+               margin-bottom below 992px. Give it its own top margin above
+               that breakpoint instead of touching the shared tile grid
+               rule (which would affect every other tile too). */
+            @media (min-width: 992px) {
+                .hostedai-wallet-tile {
+                    margin-top: 20px;
+                }
+            }
+            .hostedai-wallet-hint {
+                font-size: 11px !important;
+                opacity: 0.65;
+                margin-top: 2px;
+                line-height: 1.3;
+            }
+            </style>
+            {/literal}
 
         </div>
     </div>
