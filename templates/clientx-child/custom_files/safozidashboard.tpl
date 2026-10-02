@@ -129,7 +129,7 @@
                     <div class="content">
                         <div class="d-number stat">${$hostedaiWalletBalance|string_format:"%.2f"}</div>
                         <div class="d-label title">Hosted AI Wallet</div>
-                        <div class="d-label hostedai-wallet-hint">Rechargez votre portefeuille, puis choisissez votre GPU Cloud.</div>
+                        <div class="d-label hostedai-wallet-hint">Solde partagé entre tous vos services Pay-As-You-Go. Rechargez, puis choisissez votre GPU Cloud.</div>
                     </div>
                     <div class="arrow"><img
                             src="{$WEB_ROOT}/templates/{$template}/images/dashboard-images/right-arrow.svg" alt="arrow">
