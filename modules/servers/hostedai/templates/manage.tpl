@@ -333,19 +333,19 @@
     </div>
   </div>
 
-  <!-- Hosted AI Wallet -->
+  <!-- GPU Credits -->
   <div class="gpu-section">
     <div class="gpu-section-header">
-      &#128176; Hosted AI Wallet
+      &#128176; GPU Credits
       <span class="gpu-credit-balance {if $walletBalance > 0}gpu-credit-balance-positive{else}gpu-credit-balance-zero{/if}">
         ${$walletBalance|string_format:"%.2f"}
       </span>
       <a href="{$WEB_ROOT}/{$walletTopupUrl}" class="gpu-btn gpu-btn-start" style="margin-left:12px;padding:4px 14px;font-size:12px">
-        &#128181; Recharge Wallet
+        &#128181; Recharge GPU Credits
       </a>
     </div>
     <p style="margin:4px 0 12px;font-size:12px;color:rgba(255,255,255,0.4)">
-      This balance is shared across all your Pay-As-You-Go Hosted AI services — it is separate from any other account balance. The activity below is filtered to this service.
+      This balance is shared across all your Pay-As-You-Go GPU services — it is separate from any other account balance. The activity below is filtered to this service.
     </p>
     <div class="gpu-section-body" style="padding:0">
       {if $walletHistory}

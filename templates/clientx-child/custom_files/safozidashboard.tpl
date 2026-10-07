@@ -128,8 +128,8 @@
                             alt="dash-card"></div>
                     <div class="content">
                         <div class="d-number stat">${$hostedaiWalletBalance|string_format:"%.2f"}</div>
-                        <div class="d-label title">Hosted AI Wallet</div>
-                        <div class="d-label hostedai-wallet-hint">Solde partagé entre tous vos services Pay-As-You-Go. Rechargez, puis choisissez votre GPU Cloud.</div>
+                        <div class="d-label title">GPU Credits</div>
+                        <div class="d-label hostedai-wallet-hint">Shared balance across all your Pay-As-You-Go GPU services. Top up, then choose your GPU Cloud.</div>
                     </div>
                     <div class="arrow"><img
                             src="{$WEB_ROOT}/templates/{$template}/images/dashboard-images/right-arrow.svg" alt="arrow">
@@ -140,7 +140,7 @@
 
             {literal}
             <style>
-            /* Hosted AI Wallet tile: on desktop it wraps onto its own new
+            /* GPU Credits tile: on desktop it wraps onto its own new
                row (5th tile in a 4-per-row grid) with no gap from the row
                above, since .tiles .row.no-gutters only gets a row-wrap
                margin-bottom below 992px. Give it its own top margin above

@@ -61,7 +61,8 @@
                     <a href="{$WEB_ROOT}/{$hostedaiWalletTopupUrl}" class="tile">
                         <i class="fas fa-wallet"></i>
                         <div class="stat">${$hostedaiWalletBalance|string_format:"%.2f"}</div>
-                        <div class="title">Hosted AI Wallet</div>
+                        <div class="title">GPU Credits</div>
+                        <div style="font-size:11px;opacity:.7;margin-top:2px">Shared across all your Pay-As-You-Go GPU services.</div>
                         <div class="highlight bg-color-green"></div>
                     </a>
                 </div>

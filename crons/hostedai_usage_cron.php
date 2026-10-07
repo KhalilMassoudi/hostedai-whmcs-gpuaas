@@ -301,17 +301,17 @@ try {
                 }
             } else {
                 if ($hoursLeft < 5 && !$warned5h) {
-                    hostedai_sendLowCreditEmail($client, $service, $hoursLeft, 'Low Credit Warning',
+                    hostedai_sendLowCreditEmail($client, $service, $hoursLeft, 'Low GPU Credits Warning',
                         "Your Hosted AI service (#{$serviceId}) has approximately " . round($hoursLeft, 2)
-                        . " hours of credit remaining at your current usage rate. Please top up your account credit to avoid interruption.");
+                        . " hours of GPU Credits remaining at your current usage rate. Please top up your GPU Credits to avoid interruption.");
                     $flagUpdates['warned_5h'] = 1;
                     logActivity("hostedai usage cron: sent 5h low-credit warning to client {$service->userid} (service {$serviceId}, hoursLeft={$hoursLeft})");
                 }
 
                 if ($hoursLeft < 1 && !$warned1h) {
-                    hostedai_sendLowCreditEmail($client, $service, $hoursLeft, 'Urgent: Credit Almost Exhausted',
-                        "Your Hosted AI service (#{$serviceId}) has less than 1 hour of credit remaining at your current usage rate. "
-                        . "Your service will be suspended automatically once your credit balance reaches zero.");
+                    hostedai_sendLowCreditEmail($client, $service, $hoursLeft, 'Urgent: GPU Credits Almost Exhausted',
+                        "Your Hosted AI service (#{$serviceId}) has less than 1 hour of GPU Credits remaining at your current usage rate. "
+                        . "Your service will be suspended automatically once your GPU Credits balance reaches zero.");
                     $flagUpdates['warned_1h'] = 1;
                     logActivity("hostedai usage cron: sent 1h urgent low-credit warning to client {$service->userid} (service {$serviceId}, hoursLeft={$hoursLeft})");
                 }
@@ -339,9 +339,9 @@ try {
                 $suspendedCount++;
                 logActivity("hostedai usage cron: suspended service {$serviceId} (client {$service->userid}) — wallet exhausted (balance: {$currentCredit})");
 
-                hostedai_sendLowCreditEmail($client, $service, 0, 'Service Suspended: Hosted AI Wallet Exhausted',
-                    "Your Hosted AI service (#{$serviceId}) has been suspended because your Hosted AI Wallet balance reached \$0. "
-                    . "Please top up your wallet to resume this service.");
+                hostedai_sendLowCreditEmail($client, $service, 0, 'Service Suspended: GPU Credits Exhausted',
+                    "Your Hosted AI service (#{$serviceId}) has been suspended because your GPU Credits balance reached \$0. "
+                    . "Please top up your GPU Credits to resume this service.");
                 logActivity("hostedai usage cron: sent suspension notice to client {$service->userid} (service {$serviceId})");
             }
         } catch (\Exception $e) {
