@@ -1,0 +1,15 @@
+{
+  "name": "hostedai-terminal-sidecar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone WebSocket <-> SSH bridge for the browser-based GPU instance terminal. Runs as its own always-on process, separate from WHMCS.",
+  "main": "ssh-websocket.js",
+  "scripts": {
+    "start": "node ssh-websocket.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "ssh2": "^1.15.0",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
