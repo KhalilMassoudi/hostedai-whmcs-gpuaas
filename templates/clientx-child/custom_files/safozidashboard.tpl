@@ -13,8 +13,18 @@
                             %d %b %Y"}</span></p>
                 </div>
             </div>
-                <div class="dash-top-orderbtn">
-                    <a href="{$WEB_ROOT}/cart.php" class="wgs_custom-btn ">+ {lang key='ordernowbutton'}</a>
+                <div class="dash-top-right">
+                    {if $hostedaiWalletBalance !== null}
+                    <a href="{$WEB_ROOT}/{$hostedaiWalletTopupUrl}" class="dash-top-credits-pill"
+                        title="Shared balance across all your Pay-As-You-Go GPU services. Top up, then choose your GPU Cloud.">
+                        <span class="circle-dott green"></span>
+                        <span class="credits-amount">${$hostedaiWalletBalance|string_format:"%.2f"}</span>
+                        <span class="credits-label">GPU Credits</span>
+                    </a>
+                    {/if}
+                    <div class="dash-top-orderbtn">
+                        <a href="{$WEB_ROOT}/cart.php" class="wgs_custom-btn ">+ {lang key='ordernowbutton'}</a>
+                    </div>
                 </div>
             </div>
         </div>
@@ -120,48 +130,55 @@
                     </div>
                 </a>
             </div>
-            {if $hostedaiWalletBalance !== null}
-            <div class="col-6 col-xl-3 hostedai-wallet-tile">
-                <a href="{$WEB_ROOT}/{$hostedaiWalletTopupUrl}" class="tile dash-card-tile green-head">
-                    <div class="icon"><img
-                            src="{$WEB_ROOT}/templates/{$template}/images/dashboard-images/dash-card-ic.svg"
-                            alt="dash-card"></div>
-                    <div class="content">
-                        <div class="d-number stat">${$hostedaiWalletBalance|string_format:"%.2f"}</div>
-                        <div class="d-label title">GPU Credits</div>
-                        <div class="d-label hostedai-wallet-hint">Shared balance across all your Pay-As-You-Go GPU services. Top up, then choose your GPU Cloud.</div>
-                    </div>
-                    <div class="arrow"><img
-                            src="{$WEB_ROOT}/templates/{$template}/images/dashboard-images/right-arrow.svg" alt="arrow">
-                    </div>
-                </a>
-            </div>
-            {/if}
-
-            {literal}
-            <style>
-            /* GPU Credits tile: on desktop it wraps onto its own new
-               row (5th tile in a 4-per-row grid) with no gap from the row
-               above, since .tiles .row.no-gutters only gets a row-wrap
-               margin-bottom below 992px. Give it its own top margin above
-               that breakpoint instead of touching the shared tile grid
-               rule (which would affect every other tile too). */
-            @media (min-width: 992px) {
-                .hostedai-wallet-tile {
-                    margin-top: 20px;
-                }
-            }
-            .hostedai-wallet-hint {
-                font-size: 11px !important;
-                opacity: 0.65;
-                margin-top: 2px;
-                line-height: 1.3;
-            }
-            </style>
-            {/literal}
-
         </div>
     </div>
+
+    {literal}
+    <style>
+    /* GPU Credits used to be a 5th tile that wrapped onto its own row
+       in the 4-per-row tile grid. Moved into the top banner instead, as
+       a pill next to the Order Now button, so it's visible without
+       scrolling and the tile grid stays a clean 4 across. */
+    .dash-top-right {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+    }
+    .dash-top-credits-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 999px;
+        padding: 8px 16px;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: background 0.15s ease;
+    }
+    .dash-top-credits-pill:hover {
+        background: rgba(255, 255, 255, 0.1);
+        text-decoration: none;
+    }
+    .dash-top-credits-pill .credits-amount {
+        color: #fff;
+        font-weight: 700;
+        font-size: 15px;
+    }
+    .dash-top-credits-pill .credits-label {
+        color: rgba(255, 255, 255, 0.65);
+        font-size: 12px;
+    }
+    @media (max-width: 767px) {
+        .dash-top-right {
+            width: 100%;
+            margin-top: 12px;
+            justify-content: space-between;
+        }
+    }
+    </style>
+    {/literal}
     <div class="client-home-cards">
         <div class="row">
             <div class="col-lg-9">
