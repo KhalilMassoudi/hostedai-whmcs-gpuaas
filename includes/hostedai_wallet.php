@@ -11,7 +11,7 @@ if (!defined('HOSTEDAI_WALLET_TOPUP_GROUP')) {
     // fixed-amount top-up products (150/200/250/500 DT etc.). Any product
     // placed in this group is treated as a wallet top-up by
     // hostedai_wallet_topup.php.
-    define('HOSTEDAI_WALLET_TOPUP_GROUP', 'Hosted AI Wallet Top-Up');
+    define('HOSTEDAI_WALLET_TOPUP_GROUP', 'GPU Credits Top-Up');
 }
 
 /**
