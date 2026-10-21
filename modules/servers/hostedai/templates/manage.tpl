@@ -590,7 +590,7 @@
   </div>
 
   <!-- Browser SSH Terminal Modal -->
-  <div id="hostedai-terminal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;">
+  <div id="hostedai-terminal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;" onclick="if (event.target === this) hostedaiCloseTerminal();">
     <div style="max-width:900px;margin:40px auto;background:#1e1e1e;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;height:calc(100vh - 80px);">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:#2d2d2d;color:#fff;font-family:monospace;">
         <span id="hostedai-terminal-status">Connecting&hellip;</span>
@@ -761,6 +761,10 @@
       if (hostedaiTermSocket) { hostedaiTermSocket.close(); hostedaiTermSocket = null; }
       if (hostedaiTerm) { hostedaiTerm.dispose(); hostedaiTerm = null; }
   }
+
+  document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') hostedaiCloseTerminal();
+  });
   </script>
   {/literal}
 
