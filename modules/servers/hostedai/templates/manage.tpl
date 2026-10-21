@@ -3,9 +3,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/validator/13.7.0/validator.min.js"></script>
 <script src="{$assets}/js/custom.js?v={$unique_id}"></script>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
-<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-
 {literal}
 <style>
 /* ── GPU Dashboard Theme ─────────────────────────── */
@@ -538,9 +535,10 @@
     <div class="gpu-section-header" style="display:flex;justify-content:space-between;align-items:center">
       <span>&#128272; SSH Access</span>
       {if $instanceCredentials}
-      <button type="button" class="gpu-btn gpu-btn-restart" style="padding:4px 12px;font-size:12px" onclick="hostedaiOpenTerminal()">
+      <a href="{$WEB_ROOT}/modules/servers/hostedai/lib/terminal.php?service_id={$serviceId}" target="_blank"
+        class="gpu-btn gpu-btn-restart" style="padding:4px 12px;font-size:12px;text-decoration:none;display:inline-block">
         &#128421; Terminal
-      </button>
+      </a>
       {/if}
     </div>
     <div class="gpu-section-body" style="padding:0">
@@ -586,17 +584,6 @@
         <p class="gpu-info-msg">SSH credentials not yet available.</p>
       </div>
       {/if}
-    </div>
-  </div>
-
-  <!-- Browser SSH Terminal Modal -->
-  <div id="hostedai-terminal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;" onclick="if (event.target === this) hostedaiCloseTerminal();">
-    <div style="max-width:900px;margin:40px auto;background:#1e1e1e;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;height:calc(100vh - 80px);">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:#2d2d2d;color:#fff;font-family:monospace;">
-        <span id="hostedai-terminal-status">Connecting&hellip;</span>
-        <button type="button" onclick="hostedaiCloseTerminal()" class="gpu-btn gpu-btn-delete" style="padding:3px 10px;font-size:12px">Close</button>
-      </div>
-      <div id="hostedai-terminal-container" style="flex:1;padding:8px;min-height:0"></div>
     </div>
   </div>
 
@@ -655,9 +642,6 @@
     </div>
   </div>
 
-  <script type="text/javascript">
-  var HOSTEDAI_SERVICE_ID = {$serviceId};
-  </script>
   {literal}
   <script type="text/javascript">
   function togglePassword() {
@@ -677,94 +661,6 @@
   function confirmDelete() {
       return confirm('WARNING: This will permanently delete your instance and all data.\n\nThis cannot be undone.\n\nAre you sure?');
   }
-
-  // ── Browser SSH Terminal ──────────────────────────────────────────
-  var hostedaiTerm = null;
-  var hostedaiTermSocket = null;
-
-  function hostedaiTermToBase64(str) {
-      return btoa(String.fromCharCode.apply(null, new TextEncoder().encode(str)));
-  }
-  function hostedaiTermFromBase64(str) {
-      var bytes = Uint8Array.from(atob(str), function (c) { return c.charCodeAt(0); });
-      return new TextDecoder().decode(bytes);
-  }
-
-  function hostedaiSetTerminalStatus(text) {
-      var el = document.getElementById('hostedai-terminal-status');
-      if (el) el.textContent = text;
-  }
-
-  function hostedaiOpenTerminal() {
-      document.getElementById('hostedai-terminal-overlay').style.display = 'block';
-      hostedaiSetTerminalStatus('Requesting session…');
-
-      var formData = new FormData();
-      formData.append('action', 'generate_terminal_token');
-      formData.append('service_id', HOSTEDAI_SERVICE_ID);
-
-      fetch('/modules/servers/hostedai/lib/ajax.php', { method: 'POST', body: formData })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-              if (!data.success || !data.token) {
-                  hostedaiSetTerminalStatus('Error: ' + (data.message || 'could not start session'));
-                  return;
-              }
-              hostedaiConnectTerminal(data.token);
-          })
-          .catch(function () {
-              hostedaiSetTerminalStatus('Error: request failed');
-          });
-  }
-
-  function hostedaiConnectTerminal(token) {
-      var container = document.getElementById('hostedai-terminal-container');
-      container.innerHTML = '';
-
-      hostedaiTerm = new Terminal({ cols: 120, rows: 30, theme: { background: '#1e1e1e' } });
-      hostedaiTerm.open(container);
-
-      var proto = (location.protocol === 'https:') ? 'wss:' : 'ws:';
-      hostedaiTermSocket = new WebSocket(proto + '//' + location.host + '/ssh-ws?token=' + encodeURIComponent(token));
-
-      hostedaiTermSocket.onopen = function () {
-          hostedaiSetTerminalStatus('Connected');
-      };
-      hostedaiTermSocket.onmessage = function (event) {
-          var msg;
-          try { msg = JSON.parse(event.data); } catch (e) { return; }
-
-          if (msg.type === 'data') {
-              hostedaiTerm.write(hostedaiTermFromBase64(msg.data));
-          } else if (msg.type === 'error') {
-              hostedaiSetTerminalStatus('Error: ' + msg.message);
-          } else if (msg.type === 'connected') {
-              hostedaiSetTerminalStatus('Connected');
-          }
-      };
-      hostedaiTermSocket.onclose = function () {
-          hostedaiSetTerminalStatus('Disconnected');
-      };
-      hostedaiTermSocket.onerror = function () {
-          hostedaiSetTerminalStatus('Connection error');
-      };
-
-      hostedaiTerm.onData(function (data) {
-          if (hostedaiTermSocket && hostedaiTermSocket.readyState === WebSocket.OPEN) {
-              hostedaiTermSocket.send(JSON.stringify({ type: 'data', data: hostedaiTermToBase64(data) }));
-          }
-      });
-  }
-
-  function hostedaiCloseTerminal() {
-      document.getElementById('hostedai-terminal-overlay').style.display = 'none';
-      if (hostedaiTermSocket) { hostedaiTermSocket.close(); hostedaiTermSocket = null; }
-      if (hostedaiTerm) { hostedaiTerm.dispose(); hostedaiTerm = null; }
-  }
-
-  document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') hostedaiCloseTerminal();
-  });
   </script>
   {/literal}
 
