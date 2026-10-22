@@ -137,8 +137,13 @@ if (!$service || (int) $service->userid !== (int) $_SESSION['uid']) {
       var bytes = Uint8Array.from(atob(str), function (c) { return c.charCodeAt(0); });
       return new TextDecoder().decode(bytes);
   }
+  var lastErrorShown = false;
   function setStatus(text) {
       document.getElementById('status').textContent = text;
+  }
+  function setError(text) {
+      lastErrorShown = true;
+      setStatus(text);
   }
 
   function getSavedTheme() {
@@ -207,13 +212,13 @@ if (!$service || (int) $service->userid !== (int) $_SESSION['uid']) {
       .then(function (r) { return r.json(); })
       .then(function (data) {
           if (!data.success || !data.token) {
-              setStatus('Error: ' + (data.message || 'could not start session'));
+              setError('Error: ' + (data.message || 'could not start session'));
               return;
           }
           connect(data.token);
       })
       .catch(function () {
-          setStatus('Error: request failed');
+          setError('Error: request failed');
       });
 
   function connect(token) {
@@ -230,13 +235,15 @@ if (!$service || (int) $service->userid !== (int) $_SESSION['uid']) {
           if (msg.type === 'data') {
               term.write(fromBase64(msg.data));
           } else if (msg.type === 'error') {
-              setStatus('Error: ' + msg.message);
+              setError('Error: ' + msg.message);
           } else if (msg.type === 'connected') {
               setStatus('Connected');
           }
       };
-      socket.onclose = function () { setStatus('Disconnected'); };
-      socket.onerror = function () { setStatus('Connection error'); };
+      socket.onclose = function () {
+          if (!lastErrorShown) setStatus('Disconnected');
+      };
+      socket.onerror = function () { setError('Connection error'); };
 
       term.onData(function (data) {
           sendInput(data);
