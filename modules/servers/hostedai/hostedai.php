@@ -707,6 +707,25 @@ function hostedai_CreateAccount(array $params)
 
         $instanceName   = 'whmcs-' . $serviceId;
 
+        // Either of these being empty means the instance was never even
+        // attempted below. That used to fall through to `return 'success'`
+        // at the end of this function regardless — WHMCS would then mark
+        // the service Active with nothing real behind it, and neither the
+        // admin nor the client would see any error anywhere. Failing loudly
+        // here instead means WHMCS shows this as a failed provisioning
+        // (visible in the module log / order), so it can actually be
+        // retried instead of silently looking like a working product.
+        if (empty($teamId)) {
+            $msg = "Instance creation failed for service {$serviceId}: no Hosted AI team available.";
+            logActivity('hostedai CreateAccount error: ' . $msg);
+            return $msg;
+        }
+        if ($gpuPoolId <= 0) {
+            $msg = "Instance creation failed for service {$serviceId}: no valid GPU pool resolved — check the product's GPU Pool / Configurable Option mapping (see warning logged just above).";
+            logActivity('hostedai CreateAccount error: ' . $msg);
+            return $msg;
+        }
+
         if (!empty($teamId) && $gpuPoolId > 0) {
             logActivity('hostedai: Using resource_policy: '
                 . ($params['configoption2'] ?? 'not set')
@@ -805,8 +824,19 @@ function hostedai_CreateAccount(array $params)
                 $errorMsg = isset($instanceResponse['result']->message)
                     ? $instanceResponse['result']->message
                     : 'Instance creation failed (HTTP ' . ($instanceResponse['httpcode'] ?? '?') . ')';
-                logActivity('hostedai CreateAccount warning: ' . $errorMsg);
-                // Team was created; instance failure is non-fatal — admin can retry manually.
+                // Team was created, but the instance itself was not — that
+                // must not look like a success. Previously this only logged
+                // a warning and fell through to `return 'success'` below,
+                // so the client ended up with an Active-looking product
+                // with no real GPU instance behind it and no error shown
+                // anywhere. Returning the error here makes WHMCS show this
+                // provisioning as failed (so it can be retried / the
+                // client isn't left with a broken product), instead of
+                // silently swallowing it. Hosted AI's own error message is
+                // passed through as-is, even when it's a generic one like
+                // "incompatible region" — that's still more than nothing.
+                logActivity('hostedai CreateAccount error: instance not created for service ' . $serviceId . ': ' . $errorMsg);
+                return "Instance creation failed for service {$serviceId}: {$errorMsg}";
             }
         }
         // ── END INSTANCE CREATION ────────────────────────────────────────────
