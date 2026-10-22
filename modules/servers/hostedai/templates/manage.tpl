@@ -36,18 +36,18 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 1px;
-    color: #555555 !important;
+    color: rgba(255,255,255,0.5) !important;
     margin: 0;
 }
 .gpu-resource-card .card-info .card-value {
     font-size: 20px;
     font-weight: 700;
-    color: #111111 !important;
+    color: #ffffff !important;
     margin: 2px 0 0 0;
 }
 .gpu-resource-card .card-info .card-limit {
     font-size: 11px;
-    color: #777777 !important;
+    color: rgba(255,255,255,0.4) !important;
     margin: 0;
 }
 
@@ -221,6 +221,37 @@
     margin-left: auto;
 }
 .gpu-btn-delete:hover { background: rgba(248,81,73,0.3); color: #f85149 !important; }
+.gpu-btn:disabled,
+.gpu-btn:disabled:hover {
+    opacity: 0.35;
+    cursor: not-allowed;
+    background: rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.4) !important;
+    border-color: rgba(255,255,255,0.1);
+}
+.gpu-select {
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #ffffff !important;
+}
+.gpu-select option {
+    background: #161b22;
+    color: #ffffff;
+}
+
+/* Account credit */
+.gpu-credit-balance {
+    margin-left: auto;
+    font-size: 18px;
+    font-weight: 700;
+}
+.gpu-credit-balance-positive { color: #3fb950 !important; }
+.gpu-credit-balance-zero { color: #f85149 !important; }
+.gpu-credit-amount-positive { color: #3fb950 !important; }
+.gpu-credit-amount-negative { color: #f85149 !important; }
 
 /* Terminal logs */
 .gpu-terminal {
@@ -250,6 +281,15 @@
 {/literal}
 
 <div class="gpu-dashboard">
+
+  {if $actionBlockedMessage}
+  <div class="gpu-section" style="margin:16px;border:1px solid #c0392b;background:rgba(192,57,43,0.12)">
+    <div class="gpu-section-body" style="padding:14px 16px;color:#ff8a7a;display:flex;align-items:center;gap:10px">
+      <span style="font-size:18px">&#9888;</span>
+      <span>{$actionBlockedMessage}</span>
+    </div>
+  </div>
+  {/if}
 
   <!-- Resource Overview -->
   <div class="gpu-section" style="margin:16px">
@@ -299,6 +339,62 @@
         No resource data available
       </div>
       {/foreach}
+    </div>
+  </div>
+
+  <!-- GPU Credits -->
+  <div class="gpu-section">
+    <div class="gpu-section-header">
+      &#128176; GPU Credits
+      <span class="gpu-credit-balance {if $walletBalance > 0}gpu-credit-balance-positive{else}gpu-credit-balance-zero{/if}">
+        ${$walletBalance|string_format:"%.2f"}
+      </span>
+      <a href="{$WEB_ROOT}/{$walletTopupUrl}" class="gpu-btn gpu-btn-start" style="margin-left:12px;padding:4px 14px;font-size:12px">
+        &#128181; Recharge GPU Credits
+      </a>
+    </div>
+    <p style="margin:4px 0 12px;font-size:12px;color:rgba(255,255,255,0.4)">
+      This balance is shared across all your Pay-As-You-Go GPU services — it is separate from any other account balance. The activity below is filtered to this service.
+    </p>
+    <div class="gpu-section-body" style="padding:0">
+      {if $walletHistory}
+      <div style="max-height:320px;overflow-y:auto">
+      <table class="gpu-members-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Description</th>
+            <th style="text-align:right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {foreach from=$walletHistory item=tx}
+          <tr>
+            <td style="white-space:nowrap">{$tx.date|date_format:"%d %b %Y"}</td>
+            <td>
+              {if $tx.type == 'Usage Deduction'}
+                <span class="gpu-badge gpu-badge-stopped">Usage</span>
+              {elseif $tx.type == 'Top-Up'}
+                <span class="gpu-badge gpu-badge-running">Top-Up</span>
+              {else}
+                <span class="gpu-badge gpu-badge-provisioning">Adjustment</span>
+              {/if}
+            </td>
+            <td>{$tx.description|default:'&#8212;'}</td>
+            <td style="text-align:right;white-space:nowrap" class="{if $tx.isPositive}gpu-credit-amount-positive{else}gpu-credit-amount-negative{/if}">
+              {if $tx.isPositive}+{else}-{/if}${$tx.amount|string_format:"%.2f"}
+            </td>
+          </tr>
+          {/foreach}
+        </tbody>
+      </table>
+      </div>
+      {else}
+      <div class="gpu-section-body">
+        <p class="gpu-info-msg">No wallet activity yet.</p>
+      </div>
+      {/if}
     </div>
   </div>
 
@@ -497,16 +593,6 @@
     </div>
   </div>
 
-  <!-- Resource Usage -->
-  <div class="gpu-section">
-    <div class="gpu-section-header">&#128202; Resource Usage</div>
-    <div class="gpu-section-body">
-      <p class="gpu-info-msg">
-        &#128161; Real-time GPU metrics are available directly on your instance. Connect via SSH to monitor usage.
-      </p>
-    </div>
-  </div>
-
   <!-- Current Month Cost -->
   <div class="gpu-section">
     <div class="gpu-section-header">&#128176; Current Month Cost</div>
@@ -570,12 +656,21 @@
               class="gpu-btn gpu-btn-restart" style="padding:3px 10px;font-size:12px">
               Show
             </button>
+            <button type="button" onclick="copyToClipboard('ssh-password', this)"
+              class="gpu-btn gpu-btn-restart" style="padding:3px 10px;font-size:12px">
+              Copy
+            </button>
           </td>
         </tr>
         <tr>
           <th>SSH Command</th>
           <td class="gpu-mono" style="font-size:12px">
-            ssh {$instanceCredentials->username|default:'ubuntu'}@{$instanceCredentials->ip|default:''} -p {$instanceCredentials->port|default:'22'}
+            <span id="ssh-command-value">ssh {$instanceCredentials->username|default:'ubuntu'}@{$instanceCredentials->ip|default:''} -p {$instanceCredentials->port|default:'22'}</span>
+            &nbsp;
+            <button type="button" onclick="copyToClipboard('ssh-command-value', this)"
+              class="gpu-btn gpu-btn-restart" style="padding:3px 10px;font-size:12px;vertical-align:middle">
+              Copy
+            </button>
           </td>
         </tr>
       </table>
@@ -620,17 +715,29 @@
 
         <form method="post" style="margin:0">
           <input type="hidden" name="instance_action" value="start">
-          <button type="submit" class="gpu-btn gpu-btn-start">&#9654; Start</button>
+          <button type="submit" class="gpu-btn gpu-btn-start"
+            {if $instanceStatus == 'running'}disabled title="Already running"
+            {elseif $instanceStatus == 'provisioning' || $instanceStatus == 'starting'}disabled title="Instance is starting up"{/if}>
+            &#9654; Start
+          </button>
         </form>
 
         <form method="post" style="margin:0">
           <input type="hidden" name="instance_action" value="stop">
-          <button type="submit" class="gpu-btn gpu-btn-stop">&#9632; Stop</button>
+          <button type="submit" class="gpu-btn gpu-btn-stop"
+            {if $instanceStatus == 'stopped' || $instanceStatus == 'stop'}disabled title="Already stopped"
+            {elseif $instanceStatus == 'provisioning' || $instanceStatus == 'starting'}disabled title="Instance is starting up"{/if}>
+            &#9632; Stop
+          </button>
         </form>
 
         <form method="post" style="margin:0">
           <input type="hidden" name="instance_action" value="restart">
-          <button type="submit" class="gpu-btn gpu-btn-restart">&#8635; Restart</button>
+          <button type="submit" class="gpu-btn gpu-btn-restart"
+            {if $instanceStatus == 'stopped' || $instanceStatus == 'stop'}disabled title="Start the instance first"
+            {elseif $instanceStatus == 'provisioning' || $instanceStatus == 'starting'}disabled title="Instance is starting up"{/if}>
+            &#8635; Restart
+          </button>
         </form>
 
         <form method="post" style="margin:0;margin-left:auto" onsubmit="return confirmDelete()">
@@ -639,6 +746,33 @@
         </form>
 
       </div>
+    </div>
+  </div>
+
+  <!-- Manage Shared Volume -->
+  <div class="gpu-section">
+    <div class="gpu-section-header">&#128190; Shared Storage</div>
+    <div class="gpu-section-body">
+      {if $sharedVolumeId}
+      <div class="gpu-actions">
+        <form method="post" style="margin:0" onsubmit="return confirm('Delete this shared volume? This cannot be undone.')">
+          <input type="hidden" name="delete_shared_volume" value="1">
+          <button type="submit" class="gpu-btn gpu-btn-delete">&#128465; Delete Shared Volume</button>
+        </form>
+      </div>
+      {elseif $sharedStorageOptions}
+      <form method="post" class="gpu-actions">
+        <select name="shared_storage_choice" class="gpu-select" required>
+          <option value="">Select a storage tier&hellip;</option>
+          {foreach $sharedStorageOptions as $option}
+          <option value="{$option}">{$option}</option>
+          {/foreach}
+        </select>
+        <button type="submit" name="create_shared_volume" value="1" class="gpu-btn gpu-btn-start">&#43; Create Shared Volume</button>
+      </form>
+      {else}
+      <p class="gpu-info-msg">No shared storage tiers are configured for this product.</p>
+      {/if}
     </div>
   </div>
 
@@ -660,6 +794,47 @@
   }
   function confirmDelete() {
       return confirm('WARNING: This will permanently delete your instance and all data.\n\nThis cannot be undone.\n\nAre you sure?');
+  }
+
+  function copyToClipboard(elementId, btn) {
+      var el = document.getElementById(elementId);
+      if (!el) {
+          return;
+      }
+      var text = el.textContent.trim();
+      var original = btn.textContent;
+
+      function showCopied() {
+          btn.textContent = 'Copied!';
+          setTimeout(function () { btn.textContent = original; }, 1500);
+      }
+
+      if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(showCopied, function () {
+              hostedaiFallbackCopy(text, showCopied);
+          });
+      } else {
+          hostedaiFallbackCopy(text, showCopied);
+      }
+  }
+
+  function hostedaiFallbackCopy(text, callback) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try {
+          document.execCommand('copy');
+      } catch (e) {
+          // Clipboard access denied/unsupported — nothing more we can do.
+      }
+      document.body.removeChild(ta);
+      if (callback) {
+          callback();
+      }
   }
   </script>
   {/literal}

@@ -287,8 +287,17 @@ function hostedai_ConfigOptions(array $params)
             'Type' => 'dropdown',
             'Size' => '25',
             'Options' => array(
+                '1a24b372-62b7-44d9-9d6f-ac64e42ca77b' => 'Block-10',
                 '3bf7f9a2-3673-423f-af2f-7f86adf90ce9' => 'Block-20',
+                '008705ba-ce6a-44ef-a3a9-5e92fe73e56f' => 'Block-50',
                 'b8709e20-2b91-4e9d-8ba9-bd08cab06af4' => 'Block-100',
+                '5bb6c97c-e403-4361-87af-37b85ef5bcbd' => 'Block-200',
+                'dabb27d8-0283-436d-a866-5a2b3bc664b6' => 'Block-300',
+                '8dd7e0cc-00ee-4a53-a0aa-86672be8dc56' => 'Block-500',
+                'c5c74b4d-38cf-439d-a65e-dab4aeeec31b' => 'Block-750',
+                '5b6cc408-aab3-453a-a93d-d45db4f0430e' => 'Block-1000',
+                'e9f98a2e-e514-4167-8b6a-c47bcd241396' => 'Block-1500',
+                'b9cad3af-2506-4354-b676-0a3361d26293' => 'Block-2000',
             ),
             'Description' => 'Ephemeral storage block for instance creation',
         ),
@@ -330,33 +339,102 @@ function hostedai_ConfigOptions(array $params)
         ),
 
         // configoption18 — Recipe name -> service_id map, driven by the
-        // "AI Environment" WHMCS Configurable Option chosen at order time.
+        // "GPU Environment" WHMCS Configurable Option chosen at order time.
         'recipe_map' => array(
             'FriendlyName' => 'Recipe to Service ID Map',
             'Type' => 'textarea',
             'Rows' => '5',
             'Cols' => '50',
-            'Default' => '{"No Recipe":"6d578de2-f4a5-44d5-b9be-49d35f2ed7ff","vLLM TinyLlama":"15bacf16-bc2e-4b52-a128-ae24f9d8a0b9","Ollama":"6959262b-3df7-4e66-bb06-afc163a5f02c"}',
-            'Description' => 'JSON map of recipe names (as they appear in the "AI Environment" Configurable Option) to service UUIDs.',
+            'Default' => '{"No Recipe":"6d0483a8-8aa2-4b21-ac27-56032c5f4a16","vLLM TinyLlama":"6d0483a8-8aa2-4b21-ac27-56032c5f4a16","Ollama":"6d0483a8-8aa2-4b21-ac27-56032c5f4a16"}',
+            'Description' => 'JSON map of recipe names (as they appear in the "GPU Environment" Configurable Option) to service UUIDs.',
         ),
 
-        // configoption19 — usage-based billing: base $/hour for this product
+        // configoption19 — usage-based billing: extra flat $/hour platform fee.
+        // Retired by default now that vendor cost (Hosted AI Pricing Policy,
+        // already includes our margin) is billed directly — only set this
+        // above 0 if you want an additional flat WHMCS-side fee on top.
         'usage_base_rate' => array(
             'FriendlyName' => 'Base Hourly Rate',
             'Type' => 'text',
             'Size' => '10',
-            'Default' => '0.50',
-            'Description' => 'USD charged per hour the instance is running (base rate, before recipe surcharge). Used by hostedai_usage_cron.php.',
+            'Default' => '0',
+            'Description' => 'Extra flat USD/hour on top of Hosted AI\'s own vendor cost. Leave at 0 unless you want a separate flat platform fee — the Hosted AI Pricing Policy already carries your margin. Used by hostedai_usage_cron.php.',
         ),
 
-        // configoption20 — usage-based billing: recipe name -> extra $/hour
-        'usage_recipe_rate_map' => array(
-            'FriendlyName' => 'Recipe Hourly Rate Map',
+        // configoption20 — usage-based billing: recipe name -> ONE-TIME setup
+        // fee, charged once at CreateAccount (not per hour — clients pay
+        // once for e.g. an Ollama setup, not again every billing window).
+        'usage_recipe_setup_fee_map' => array(
+            'FriendlyName' => 'Recipe Setup Fee Map',
             'Type' => 'textarea',
             'Rows' => '5',
             'Cols' => '50',
-            'Default' => '{"No Recipe":0,"vLLM TinyLlama":0.20,"Ollama":0.15}',
-            'Description' => 'JSON map of recipe name -> extra USD/hour added on top of the Base Hourly Rate.',
+            'Default' => '{"No Recipe":0,"vLLM TinyLlama":5,"Ollama":3}',
+            'Description' => 'JSON map of recipe name -> ONE-TIME USD setup fee, deducted from the Hosted AI Wallet once when the instance is created (not per hour). Usage-Based Billing Mode only.',
+        ),
+
+        // configoption21 — Shared Storage option name -> storage_block_id map.
+        // Driven by a "Shared Storage" WHMCS Configurable Option chosen at
+        // order time (create this Configurable Option Group in WHMCS admin,
+        // same as "GPU Environment" for recipes). Map key "None" (or the
+        // option being empty) means no shared volume is provisioned.
+        'shared_storage_block_map' => array(
+            'FriendlyName' => 'Shared Storage Block Map',
+            'Type' => 'textarea',
+            'Rows' => '5',
+            'Cols' => '50',
+            'Default' => '{"None":"","100GB Shared":"b8709e20-2b91-4e9d-8ba9-bd08cab06af4","300GB Shared":"dabb27d8-0283-436d-a866-5a2b3bc664b6"}',
+            'Description' => 'JSON map of "Shared Storage" Configurable Option names to shared-storage-capable storage_block_id UUIDs.',
+        ),
+
+        // configoption22 — Billing Mode: which products the usage cron is
+        // allowed to deduct from client credit for. Flat-priced monthly
+        // subscription products are billed entirely through WHMCS's normal
+        // recurring invoice + overdue-suspension automation (already wired
+        // via hostedai_SuspendAccount/TerminateAccount) — the usage cron
+        // must never ALSO deduct credit for them, or clients get double-billed.
+        'billing_mode' => array(
+            'FriendlyName' => 'Billing Mode',
+            'Type' => 'dropdown',
+            'Size' => '25',
+            'Options' => array(
+                'usage'        => 'Usage-Based (deduct from credit)',
+                'subscription' => 'Fixed Subscription (invoice only, no credit deduction)',
+            ),
+            'Default' => 'usage',
+            'Description' => 'Usage-Based: hostedai_usage_cron.php deducts vendor cost + recipe surcharge from client credit. Fixed Subscription: billed only via the product\'s recurring invoice — the cron tracks hours for visibility but never touches credit, and suspension/termination is handled by WHMCS\'s normal overdue-invoice automation instead.',
+        ),
+
+        // configoption23 — Fixed Subscription billing: recipe name -> percent
+        // surcharge on top of this product's recurring amount. Only used
+        // when Billing Mode (configoption22) is "subscription" — the
+        // usage-based equivalent is configoption20 (a one-time setup fee,
+        // charged once at CreateAccount, instead of a recurring %/invoice).
+        // Applied by includes/hooks/hostedai_recipe_surcharge.php at invoice
+        // time, computed fresh from the product's *current* recurring
+        // amount each time, so it stays correct if the base price changes.
+        'usage_recipe_percent_map' => array(
+            'FriendlyName' => 'Recipe Percent Map',
+            'Type' => 'textarea',
+            'Rows' => '5',
+            'Cols' => '50',
+            'Default' => '{"No Recipe":0,"vLLM TinyLlama":10,"Ollama":0}',
+            'Description' => 'JSON map of recipe name (as it appears in the "GPU Environment" Configurable Option) -> percent surcharge added to this product\'s recurring amount. Fixed Subscription products only.',
+        ),
+
+        // configoption24 — Client-Choice Resource Maps. Only needed on
+        // products where the client picks their own Accelerator / Instance
+        // Flavor / Storage Size as priced Configurable Options (create
+        // those option groups in WHMCS admin first, named exactly
+        // "GPU Accelerator", "Instance Flavor", "Storage Size"). Leave
+        // blank on products where the admin fixes these above instead.
+        'client_choice_maps' => array(
+            'FriendlyName' => 'Client-Choice Resource Maps',
+            'Type' => 'textarea',
+            'Rows' => '8',
+            'Cols' => '50',
+            'Default' => '',
+            'Description' => 'JSON: {"accelerator_map":{"<GPU Accelerator option name>":{"pool_id":8,"region_id":6}},"flavor_map":{"<Instance Flavor option name>":"<instance_type_id UUID>"},"storage_map":{"<Storage Size option name>":"<storage_block_id UUID>"}}. Only used when the matching Configurable Option is assigned to this product — leave blank for admin-fixed products.',
         ),
 
     );
@@ -452,11 +530,28 @@ function hostedai_CreateAccount(array $params)
             $teamName = 'client-' . $clientId . '-'
                 . preg_replace('/[^a-z0-9]/i', '', strtolower($name ?? ''));
 
+            // Per POST /team docs, the 5 policy IDs must be bundled inside a
+            // "general" (or "baremetal") wrapper object, with has_general_policies
+            // / has_baremetal_policies booleans alongside — sending them as flat
+            // top-level fields only (the old shape below) is accepted by the API
+            // but never actually satisfies the has_general_policies check, which
+            // is why team creation kept failing with "invalid policy id".
+            $policyBundle = [
+                'image_policy_id'         => $imagePolicyID ?? '',
+                'instance_type_policy_id' => $instancePolicyID ?? '',
+                'pricing_policy_id'       => $pricingPolicyID ?? '',
+                'resource_policy_id'      => $resourcePolicyID ?? '',
+                'service_policy_id'       => $servicePolicyID ?? '',
+            ];
+
             $postData = [
                 'color' => $color ?? '#414141',
                 'description' => '',
+                'general' => $policyBundle,
+                'has_general_policies' => true,
+                'has_baremetal_policies' => false,
                 'image_policy_id' => $imagePolicyID ?? '',
-                "instance_type_policy_id" => $instancePolicyID ?? '',
+                'instance_type_policy_id' => $instancePolicyID ?? '',
                 'members' => [
                     [
                         'email' => $email ?? '',
@@ -543,31 +638,69 @@ function hostedai_CreateAccount(array $params)
             $workspaceId = $params['configoption17'] ?? '';
         }
 
+        // ── CLIENT-CHOICE RESOURCE OVERRIDE (configoption24) ──────────────────
+        // Some products let the client pick Accelerator/Instance Flavor/Storage
+        // themselves at checkout — each a priced WHMCS Configurable Option —
+        // instead of the admin fixing them above in Module Settings. When the
+        // matching option was selected and resolves in the map, it overrides
+        // the fixed value above; otherwise the admin-fixed value stands
+        // unchanged. Existing admin-fixed products simply don't have these
+        // option groups assigned, so this is a no-op for them.
+        $clientChoiceMapJson = $params['configoption24'] ?? '';
+        $clientChoiceMap = Helper::decodeAdminJsonMap($clientChoiceMapJson);
+
+        // trim() guards against stray leading/trailing whitespace in the
+        // Configurable Option's saved name (a WHMCS data-entry quirk that
+        // silently breaks an exact-match map lookup otherwise).
+        $selectedAccelerator = trim($params['configoptions']['GPU Accelerator'] ?? '');
+        if ($selectedAccelerator !== '' && isset($clientChoiceMap['accelerator_map'][$selectedAccelerator])) {
+            $acceleratorChoice = $clientChoiceMap['accelerator_map'][$selectedAccelerator];
+            $gpuPoolId = (int) ($acceleratorChoice['pool_id'] ?? $gpuPoolId);
+            $regionId  = (int) ($acceleratorChoice['region_id'] ?? $regionId);
+        }
+
+        $selectedFlavor = trim($params['configoptions']['Instance Flavor'] ?? '');
+        if ($selectedFlavor !== '' && isset($clientChoiceMap['flavor_map'][$selectedFlavor])) {
+            $instanceTypeId = $clientChoiceMap['flavor_map'][$selectedFlavor];
+        }
+
+        $selectedStorageSize = trim($params['configoptions']['Storage Size'] ?? '');
+        if ($selectedStorageSize !== '' && isset($clientChoiceMap['storage_map'][$selectedStorageSize])) {
+            $storageBlockId = $clientChoiceMap['storage_map'][$selectedStorageSize];
+        }
+
+        if ($gpuPoolId <= 0) {
+            logActivity("hostedai CreateAccount warning: no valid GPU pool resolved for service {$serviceId} (accelerator='{$selectedAccelerator}') — instance creation skipped. Check the Configurable Option name matches configoption24 exactly, or that GPU Pool is set in Module Settings as a fallback."
+                . " DEBUG raw configoption24=" . var_export($clientChoiceMapJson, true)
+                . " jsonDecodeError=" . json_last_error_msg()
+                . " parsedMapKeys=" . json_encode(array_keys($clientChoiceMap))
+                . " acceleratorMapKeys=" . json_encode(array_keys($clientChoiceMap['accelerator_map'] ?? []))
+                . " rawHex=" . bin2hex($clientChoiceMapJson));
+        }
+        // ── END CLIENT-CHOICE RESOURCE OVERRIDE ────────────────────────────────
+
         // ── RECIPE SELECTION (WHMCS Configurable Option → service_id) ────────
         // Hardcoded recipe map (can be overridden by configoption18)
         $defaultRecipeMap = [
-            'No Recipe'      => '6d578de2-f4a5-44d5-b9be-49d35f2ed7ff',
-            'vLLM TinyLlama' => '15bacf16-bc2e-4b52-a128-ae24f9d8a0b9',
-            'Ollama'         => '6959262b-3df7-4e66-bb06-afc163a5f02c',
+            'No Recipe'      => '6d0483a8-8aa2-4b21-ac27-56032c5f4a16',
+            'vLLM TinyLlama' => '6d0483a8-8aa2-4b21-ac27-56032c5f4a16',
+            'Ollama'         => '6d0483a8-8aa2-4b21-ac27-56032c5f4a16',
         ];
 
         // Try configoption18 override first
         $recipeMapJson = $params['configoption18'] ?? '';
-        $recipeMap = [];
-        if (!empty(trim($recipeMapJson))) {
-            $recipeMap = json_decode($recipeMapJson, true) ?? [];
-        }
+        $recipeMap = Helper::decodeAdminJsonMap($recipeMapJson);
         // Fall back to hardcoded map if configoption empty or invalid
         if (empty($recipeMap)) {
             $recipeMap = $defaultRecipeMap;
         }
 
-        $selectedRecipe = $params['configoptions']['AI Environment']
+        $selectedRecipe = $params['configoptions']['GPU Environment']
             ?? 'No Recipe';
 
         $apiServiceId = $recipeMap[$selectedRecipe]
             ?? $recipeMap['No Recipe']
-            ?? '6d578de2-f4a5-44d5-b9be-49d35f2ed7ff';
+            ?? '6d0483a8-8aa2-4b21-ac27-56032c5f4a16';
 
         logActivity('hostedai: Recipe selected: ' . $selectedRecipe . ' -> service_id: ' . $apiServiceId);
         // ── END RECIPE SELECTION ─────────────────────────────────────────────
@@ -578,6 +711,7 @@ function hostedai_CreateAccount(array $params)
             logActivity('hostedai: Using resource_policy: '
                 . ($params['configoption2'] ?? 'not set')
                 . ' region_id: ' . $regionId);
+
             $instanceResponse = $helper->createInstance(
                 $teamId,
                 $apiServiceId,
@@ -595,6 +729,11 @@ function hostedai_CreateAccount(array $params)
                 $instanceId = $instanceResponse['result'];
                 $helper->savePoolSubscriptionId($serviceId, $instanceId);
                 $helper->saveRecipeNote($serviceId, $selectedRecipe);
+                // The instance's real region — may differ from configoption16
+                // when a client-choice GPU Accelerator override applied above.
+                // Later actions (e.g. creating a shared volume post-creation)
+                // must use this, not re-read the admin-fixed default.
+                $helper->saveRegionNote($serviceId, $regionId);
 
                 // Surface the instance ID in the service's domain field so it's
                 // visible/searchable in the client and admin service lists.
@@ -603,6 +742,65 @@ function hostedai_CreateAccount(array $params)
                     ->update(['domain' => $instanceId]);
 
                 logActivity('hostedai: Instance created successfully: ' . $instanceId);
+
+                // ── ONE-TIME RECIPE SETUP FEE (Usage-Based products only) ────
+                // configoption20 is a one-time setup price per recipe — the
+                // client pays once for e.g. an Ollama setup, not again every
+                // hour the instance runs. Fixed Subscription products use a
+                // separate, percentage-of-recurring surcharge instead (see
+                // includes/hooks/hostedai_recipe_surcharge.php), applied via
+                // invoice rather than the wallet, so this block skips them.
+                // ref=recipe_setup_{serviceId} makes this idempotent: a
+                // retried CreateAccount (failed provisioning attempt,
+                // admin re-triggering Create) can never charge it twice.
+                $billingMode = !empty($params['configoption22']) ? $params['configoption22'] : 'usage';
+                if ($billingMode !== 'subscription') {
+                    $recipeFeeMap = Helper::decodeAdminJsonMap($params['configoption20'] ?? '');
+                    $recipeFee = (float) ($recipeFeeMap[$selectedRecipe] ?? 0);
+                    if ($recipeFee > 0) {
+                        require_once __DIR__ . '/../../../includes/hostedai_wallet.php';
+                        $recipeFeeDebited = hostedai_wallet_debit(
+                            $clientId,
+                            $recipeFee,
+                            "Hosted AI recipe setup: {$selectedRecipe} (service #{$serviceId})",
+                            'recipe_setup_' . $serviceId
+                        );
+                        if ($recipeFeeDebited) {
+                            logActivity("hostedai: charged one-time recipe setup fee \${$recipeFee} for '{$selectedRecipe}' (service {$serviceId})");
+                        } else {
+                            logActivity("hostedai: recipe setup fee debit failed for service {$serviceId} (client {$clientId}) — wallet may be exhausted");
+                        }
+                    }
+                }
+                // ── END ONE-TIME RECIPE SETUP FEE ────────────────────────────
+
+                // ── SHARED VOLUME (optional, client-selected at order time) ──
+                $sharedStorageMapJson = $params['configoption21'] ?? '';
+                $sharedStorageMap = Helper::decodeAdminJsonMap($sharedStorageMapJson);
+
+                $selectedSharedStorage = $params['configoptions']['Shared Storage'] ?? 'None';
+                $sharedStorageBlockId  = $sharedStorageMap[$selectedSharedStorage] ?? '';
+
+                if (!empty($sharedStorageBlockId) && !empty($teamId)) {
+                    $volumeResponse = $helper->createSharedVolume(
+                        'whmcs-' . $serviceId . '-shared',
+                        $regionId,
+                        $sharedStorageBlockId,
+                        $teamId
+                    );
+
+                    if (!empty($volumeResponse['success'])) {
+                        $helper->saveSharedVolumeId($serviceId, $volumeResponse['result']->id);
+                        logActivity('hostedai: Shared volume created successfully: ' . $volumeResponse['result']->id);
+                    } else {
+                        $volErrorMsg = isset($volumeResponse['result']->message)
+                            ? $volumeResponse['result']->message
+                            : 'Shared volume creation failed (HTTP ' . ($volumeResponse['httpcode'] ?? '?') . ')';
+                        logActivity('hostedai CreateAccount warning: ' . $volErrorMsg);
+                        // Instance was created; shared volume failure is non-fatal — admin can retry manually.
+                    }
+                }
+                // ── END SHARED VOLUME ────────────────────────────────────────
             } else {
                 $errorMsg = isset($instanceResponse['result']->message)
                     ? $instanceResponse['result']->message
@@ -749,6 +947,19 @@ function hostedai_TerminateAccount(array $params)
             }
         }
         // ── END INSTANCE TERMINATION ─────────────────────────────────────────
+
+        // ── SHARED VOLUME TERMINATION ─────────────────────────────────────────
+        $sharedVolumeId = $helper->getSharedVolumeIdFromNotes($serviceId);
+        if (!empty($sharedVolumeId)) {
+            $deleteVolResponse = $helper->deleteSharedVolume($sharedVolumeId);
+            if ($deleteVolResponse['httpcode'] == 200 || $deleteVolResponse['httpcode'] == 204) {
+                $helper->saveSharedVolumeId($serviceId, '');
+                logActivity('hostedai: Shared volume ' . $sharedVolumeId . ' deleted successfully');
+            } else {
+                logActivity('hostedai: Warning — could not delete shared volume ' . $sharedVolumeId);
+            }
+        }
+        // ── END SHARED VOLUME TERMINATION ─────────────────────────────────────
 
         $fields = ["team_id" => ''];
         $helper->insert_hostedai_custom_fields_value($serviceId, $pid, $fields);
@@ -1035,12 +1246,85 @@ function hostedai_ClientArea(array $params)
 {
     
     try {
-        
+
         global $CONFIG;
         global $whmcs;
         $helper = new Helper($params);
 
+        // ── HOSTED AI WALLET: balance + itemized top-up/usage history ────
+        // Independent of the Hosted AI API calls below (pure local WHMCS DB
+        // reads), so it still renders even if Hosted AI is unreachable.
+        // This is the Hosted AI Wallet only — fully separate from WHMCS's
+        // native account credit — debited by crons/hostedai_usage_cron.php
+        // and credited by includes/hooks/hostedai_wallet_topup.php.
+        require_once __DIR__ . '/../../../includes/hostedai_wallet.php';
+
+        $walletBalance = 0.0;
+        $walletHistory = [];
+        try {
+            $walletBalance = hostedai_wallet_get_balance($params['userid']);
+            // Balance is the real shared-wallet total (correct, spans every
+            // usage-mode service this client runs); history shown here is
+            // scoped to just this service so its page doesn't display
+            // another service's usage lines.
+            $walletHistory = hostedai_wallet_get_history($params['userid'], 100, $params['serviceid']);
+        } catch (\Exception $e) {
+            logActivity('hostedai: wallet history lookup failed: ' . $e->getMessage());
+        }
+        $walletTopupUrl = hostedai_wallet_get_topup_url();
+        // ── END HOSTED AI WALLET ─────────────────────────────
+
         // ── CLIENT AREA ACTION HANDLER ──────────────────────
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_shared_volume'])) {
+            $sharedVolumeId = $helper->getSharedVolumeIdFromNotes($params['serviceid']);
+            if (!empty($sharedVolumeId)) {
+                $deleteVolResponse = $helper->deleteSharedVolume($sharedVolumeId);
+                if ($deleteVolResponse['httpcode'] == 200 || $deleteVolResponse['httpcode'] == 204) {
+                    $helper->saveSharedVolumeId($params['serviceid'], '');
+                    logActivity('hostedai: client deleted shared volume ' . $sharedVolumeId);
+                } else {
+                    logActivity('hostedai: client shared volume deletion failed for ' . $sharedVolumeId
+                        . ' (HTTP ' . ($deleteVolResponse['httpcode'] ?? '?') . ') — note left in place so it stays tracked.');
+                }
+            }
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_shared_volume'])) {
+            $sharedStorageMapJson = $params['configoption21'] ?? '';
+            $sharedStorageMap = Helper::decodeAdminJsonMap($sharedStorageMapJson);
+
+            $selectedSharedStorage = $_POST['shared_storage_choice'] ?? '';
+            $newStorageBlockId = $sharedStorageMap[$selectedSharedStorage] ?? '';
+            // The instance's actual region (saved at CreateAccount time, which
+            // may have been client-choice-overridden away from configoption16)
+            // — fall back to the admin default only for services provisioned
+            // before this note existed.
+            $savedRegionId = $helper->getRegionIdFromNotes($params['serviceid']);
+            $newRegionId   = $savedRegionId !== null ? $savedRegionId : (int) ($params['configoption16'] ?? 5);
+            $newVolumeTeamId = $helper->resolveTeamId($params);
+
+            if (!empty($newStorageBlockId) && !empty($newVolumeTeamId)) {
+                $volumeResponse = $helper->createSharedVolume(
+                    'whmcs-' . $params['serviceid'] . '-shared',
+                    $newRegionId,
+                    $newStorageBlockId,
+                    $newVolumeTeamId
+                );
+
+                if (!empty($volumeResponse['success'])) {
+                    $helper->saveSharedVolumeId($params['serviceid'], $volumeResponse['result']->id);
+                    logActivity('hostedai: client created shared volume ' . $volumeResponse['result']->id);
+                } else {
+                    $volErrorMsg = isset($volumeResponse['result']->message)
+                        ? $volumeResponse['result']->message
+                        : 'Shared volume creation failed (HTTP ' . ($volumeResponse['httpcode'] ?? '?') . ')';
+                    logActivity('hostedai: client shared volume creation failed: ' . $volErrorMsg);
+                }
+            }
+        }
+
+        $actionBlockedMessage = null;
+
         if ($_SERVER['REQUEST_METHOD'] === 'POST' &&
             (isset($_POST['instance_action']) || isset($_POST['delete_instance']))) {
 
@@ -1052,6 +1336,22 @@ function hostedai_ClientArea(array $params)
 
                 if (isset($_POST['instance_action'])) {
                     $action = $_POST['instance_action'];
+
+                    // Pay-as-you-go clients at $0 (or below, e.g. a usage
+                    // charge that landed after the last top-up) must not be
+                    // able to start a new session — the usage cron only
+                    // catches this reactively, every 5 minutes, which would
+                    // otherwise let a $0-balance client start, use, and only
+                    // get suspended after the fact. Subscription/Monthly
+                    // products never touch the wallet, so they're exempt —
+                    // their suspension is WHMCS's normal overdue-invoice flow.
+                    $startBillingMode = !empty($params['configoption22']) ? $params['configoption22'] : 'usage';
+                    if ($action === 'start' && $startBillingMode !== 'subscription' && $walletBalance <= 0) {
+                        $actionBlockedMessage = 'Your GPU Credits balance is $0.00. Please top up before starting this instance.';
+                        logActivity('hostedai: blocked start for service ' . $params['serviceid']
+                            . ' — GPU Credits balance is ' . $walletBalance);
+                        $action = null; // fall through without starting
+                    }
 
                     if ($action === 'start') {
                         $helper->startInstance($instanceId);
@@ -1171,6 +1471,12 @@ function hostedai_ClientArea(array $params)
                     $instanceId = $helper->getPoolSubscriptionIdFromNotes(
                         $params['serviceid']
                     );
+                    $sharedVolumeId = $helper->getSharedVolumeIdFromNotes(
+                        $params['serviceid']
+                    );
+
+                    $sharedStorageOptionsJson = $params['configoption21'] ?? '';
+                    $sharedStorageOptions = array_keys(Helper::decodeAdminJsonMap($sharedStorageOptionsJson));
 
                     $instanceDetails     = null;
                     $instanceStats       = null;
@@ -1199,6 +1505,10 @@ function hostedai_ClientArea(array $params)
                     return array(
                         'templatefile' => $templateFile,
                         'templateVariables' => array(
+                            'walletBalance'       => $walletBalance,
+                            'walletHistory'       => $walletHistory,
+                            'walletTopupUrl'      => $walletTopupUrl,
+                            'actionBlockedMessage' => $actionBlockedMessage,
                             'responseData'        => $responseData,
                             'teammembers'         => $getTeamMembers ? $getTeamMembers['result']->members : '',
                             'resourcesData'       => $resourceOverviewData,
@@ -1212,6 +1522,8 @@ function hostedai_ClientArea(array $params)
                             'instances'           => $instancesData,
                             'poolId'              => $poolId,
                             'instanceId'          => $instanceId ?? '',
+                            'sharedVolumeId'      => $sharedVolumeId ?? '',
+                            'sharedStorageOptions' => $sharedStorageOptions,
                             'instanceDetails'     => $instanceDetails,
                             'instanceStats'       => $instanceStats,
                             'instanceLogs'        => $instanceLogs,
