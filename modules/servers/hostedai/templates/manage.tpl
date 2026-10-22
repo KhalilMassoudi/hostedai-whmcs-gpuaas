@@ -282,6 +282,15 @@
 
 <div class="gpu-dashboard">
 
+  {if $actionBlockedMessage}
+  <div class="gpu-section" style="margin:16px;border:1px solid #c0392b;background:rgba(192,57,43,0.12)">
+    <div class="gpu-section-body" style="padding:14px 16px;color:#ff8a7a;display:flex;align-items:center;gap:10px">
+      <span style="font-size:18px">&#9888;</span>
+      <span>{$actionBlockedMessage}</span>
+    </div>
+  </div>
+  {/if}
+
   <!-- Resource Overview -->
   <div class="gpu-section" style="margin:16px">
     <div class="gpu-section-header">

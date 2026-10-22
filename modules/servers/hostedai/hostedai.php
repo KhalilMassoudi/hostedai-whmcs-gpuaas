@@ -1323,6 +1323,8 @@ function hostedai_ClientArea(array $params)
             }
         }
 
+        $actionBlockedMessage = null;
+
         if ($_SERVER['REQUEST_METHOD'] === 'POST' &&
             (isset($_POST['instance_action']) || isset($_POST['delete_instance']))) {
 
@@ -1334,6 +1336,22 @@ function hostedai_ClientArea(array $params)
 
                 if (isset($_POST['instance_action'])) {
                     $action = $_POST['instance_action'];
+
+                    // Pay-as-you-go clients at $0 (or below, e.g. a usage
+                    // charge that landed after the last top-up) must not be
+                    // able to start a new session — the usage cron only
+                    // catches this reactively, every 5 minutes, which would
+                    // otherwise let a $0-balance client start, use, and only
+                    // get suspended after the fact. Subscription/Monthly
+                    // products never touch the wallet, so they're exempt —
+                    // their suspension is WHMCS's normal overdue-invoice flow.
+                    $startBillingMode = !empty($params['configoption22']) ? $params['configoption22'] : 'usage';
+                    if ($action === 'start' && $startBillingMode !== 'subscription' && $walletBalance <= 0) {
+                        $actionBlockedMessage = 'Your GPU Credits balance is $0.00. Please top up before starting this instance.';
+                        logActivity('hostedai: blocked start for service ' . $params['serviceid']
+                            . ' — GPU Credits balance is ' . $walletBalance);
+                        $action = null; // fall through without starting
+                    }
 
                     if ($action === 'start') {
                         $helper->startInstance($instanceId);
@@ -1490,6 +1508,7 @@ function hostedai_ClientArea(array $params)
                             'walletBalance'       => $walletBalance,
                             'walletHistory'       => $walletHistory,
                             'walletTopupUrl'      => $walletTopupUrl,
+                            'actionBlockedMessage' => $actionBlockedMessage,
                             'responseData'        => $responseData,
                             'teammembers'         => $getTeamMembers ? $getTeamMembers['result']->members : '',
                             'resourcesData'       => $resourceOverviewData,
