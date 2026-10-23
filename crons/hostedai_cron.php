@@ -13,6 +13,25 @@ if (!empty($whmcspath)) {
     require(__DIR__ . "/../init.php");
 }
 
+// This file sits under the public webroot like any other WHMCS file, so
+// without this check anyone who found/guessed its URL could trigger it
+// on demand, repeatedly, with no authentication at all. Allow it only
+// from the server's own CLI cron (the normal, recommended way to run
+// this), or from an HTTP request carrying a secret key that matches —
+// never a plain unauthenticated hit.
+if (php_sapi_name() !== 'cli') {
+    if (!defined('HOSTEDAI_CRON_SECRET')) {
+        // Set a real value here (e.g. openssl rand -hex 32) only if you
+        // need to trigger this cron via a URL instead of the server's
+        // own crontab, then pass it as ?key=<value>.
+        define('HOSTEDAI_CRON_SECRET', '');
+    }
+    if (HOSTEDAI_CRON_SECRET === '' || ($_GET['key'] ?? '') !== HOSTEDAI_CRON_SECRET) {
+        http_response_code(403);
+        exit('Forbidden');
+    }
+}
+
 $helper = new Helper();
 
 try {
