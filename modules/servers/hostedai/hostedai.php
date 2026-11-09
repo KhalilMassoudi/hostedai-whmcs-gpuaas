@@ -76,6 +76,16 @@ function hostedai_ConfigOptions(array $params)
         }
     }
     
+    if (empty($serverParams)) {
+        // Every dropdown below will come back empty if this is empty —
+        // no server resolved for this product at all (not assigned yet,
+        // assigned directly instead of via a Server Group, or the
+        // assigned server isn't type=hostedai / is disabled).
+        logActivity('hostedai_ConfigOptions: no server resolved for product '
+            . ($pid ?: '?') . ' (servergroup=' . ($serverGroupToUse ?? 'none')
+            . ') — all policy/pool dropdowns will be empty until a server is assigned.');
+    }
+
     $helper = new Helper($serverParams);
 
     /** Get the API to fetch the pricing policy items */
@@ -88,6 +98,16 @@ function hostedai_ConfigOptions(array $params)
                     $pricingOptions[$value->policy->id] = $value->policy->name;
                 }
             }
+        } else {
+            // Hosted AI replied, but with no usable list — API error (bad
+            // credentials, wrong hostname) or a genuinely empty account.
+            // getPolicyItems() never throws for this case, so without this
+            // it fails completely silently and the dropdown just looks
+            // empty with no clue why.
+            logActivity('hostedai: pricing-policy dropdown empty — server='
+                . ($serverParams['serverhostname'] ?? 'none') . ' httpcode='
+                . ($getPricingPolicy['httpcode'] ?? '?') . ' result='
+                . substr(json_encode($getPricingPolicy['result'] ?? null), 0, 300));
         }
     } catch (Exception $e) {
         logActivity('hostedai: Failed to load pricing policies: ' . $e->getMessage());
@@ -101,6 +121,10 @@ function hostedai_ConfigOptions(array $params)
             foreach ($getResourcePolicy['result'] as $value) {
                 $resourceOptions[$value->id] = $value->name;
             }
+        } else {
+            logActivity('hostedai: resource-policy dropdown empty — httpcode='
+                . ($getResourcePolicy['httpcode'] ?? '?') . ' result='
+                . substr(json_encode($getResourcePolicy['result'] ?? null), 0, 300));
         }
     } catch (Exception $e) {
         logActivity('hostedai: Failed to load resource policies: ' . $e->getMessage());
@@ -114,6 +138,10 @@ function hostedai_ConfigOptions(array $params)
             foreach ($getServicePolicy['result'] as $policy) {
                 $serviceOptions[$policy->id] = $policy->name;
             }
+        } else {
+            logActivity('hostedai: service-policy dropdown empty — httpcode='
+                . ($getServicePolicy['httpcode'] ?? '?') . ' result='
+                . substr(json_encode($getServicePolicy['result'] ?? null), 0, 300));
         }
     } catch (Exception $e) {
         logActivity('hostedai: Failed to load service policies: ' . $e->getMessage());
@@ -127,6 +155,10 @@ function hostedai_ConfigOptions(array $params)
             foreach ($getInstancePolicy['result'] as $policy) {
                 $instanceOptions[$policy->id] = $policy->name;
             }
+        } else {
+            logActivity('hostedai: instance-type-policy dropdown empty — httpcode='
+                . ($getInstancePolicy['httpcode'] ?? '?') . ' result='
+                . substr(json_encode($getInstancePolicy['result'] ?? null), 0, 300));
         }
     } catch (Exception $e) {
         logActivity('hostedai: Failed to load instance type policies: ' . $e->getMessage());
@@ -140,6 +172,10 @@ function hostedai_ConfigOptions(array $params)
             foreach ($getImagePolicy['result'] as $policy) {
                 $imageOptions[$policy->id] = $policy->name;
             }
+        } else {
+            logActivity('hostedai: image-policy dropdown empty — httpcode='
+                . ($getImagePolicy['httpcode'] ?? '?') . ' result='
+                . substr(json_encode($getImagePolicy['result'] ?? null), 0, 300));
         }
     } catch (Exception $e) {
         logActivity('hostedai: Failed to load image policies: ' . $e->getMessage());
@@ -157,6 +193,10 @@ function hostedai_ConfigOptions(array $params)
                     $gpuPoolOptions[$pool->pool_id] = $label . ($label && $name ? ' — ' : '') . $name;
                 }
             }
+        } else {
+            logActivity('hostedai: GPU pool dropdown empty — httpcode='
+                . ($getPoolsResponse['httpcode'] ?? '?') . ' result='
+                . substr(json_encode($getPoolsResponse['result'] ?? null), 0, 300));
         }
     } catch (Exception $e) {
         logActivity('hostedai: Failed to load GPU pools: ' . $e->getMessage());
