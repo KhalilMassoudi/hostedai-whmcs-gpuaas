@@ -766,6 +766,24 @@ function hostedai_CreateAccount(array $params)
             return $msg;
         }
 
+        // A usage-based client whose GPU Credits are already at $0 before
+        // the instance even exists must not get a running instance handed
+        // to them — the Start-button balance gate only ever catches a
+        // *restart* after creation, so without this check a $0 client
+        // could still order and immediately have a live, unpaid-for
+        // instance. Subscription/Monthly products are exempt — they never
+        // touch the wallet.
+        $createBillingMode = !empty($params['configoption22']) ? $params['configoption22'] : 'usage';
+        if ($createBillingMode !== 'subscription') {
+            require_once __DIR__ . '/../../../includes/hostedai_wallet.php';
+            $createTimeBalance = hostedai_wallet_get_balance($clientId);
+            if ($createTimeBalance <= 0) {
+                $msg = "Instance creation blocked for service {$serviceId}: client's GPU Credits balance is \${$createTimeBalance}. Top up before this instance can be provisioned.";
+                logActivity('hostedai CreateAccount error: ' . $msg);
+                return $msg;
+            }
+        }
+
         if (!empty($teamId) && $gpuPoolId > 0) {
             logActivity('hostedai: Using resource_policy: '
                 . ($params['configoption2'] ?? 'not set')

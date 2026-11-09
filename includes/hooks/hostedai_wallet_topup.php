@@ -27,6 +27,17 @@ require_once __DIR__ . '/../hostedai_wallet.php';
 function hostedai_wallet_credit_topup_service($hosting, $context = '')
 {
     if (!hostedai_wallet_is_topup_product($hosting->packageid)) {
+        // Silent on purpose for every OTHER product (this hook fires for
+        // every accepted order / paid invoice, not just top-ups) — but
+        // log once when a product that looks like it's meant to be a
+        // top-up isn't recognised as one, so a Product Group name typo
+        // doesn't fail completely invisibly like it just did.
+        $product = Capsule::table('tblproducts')->where('id', $hosting->packageid)->first();
+        if ($product && stripos($product->name, 'credit') !== false) {
+            logActivity("hostedai wallet: service {$hosting->id} (product '{$product->name}') was not recognised as a"
+                . " top-up — its Product Group name must match HOSTEDAI_WALLET_TOPUP_GROUP exactly ('"
+                . HOSTEDAI_WALLET_TOPUP_GROUP . "'). Check Setup > Products/Services for the group's actual name.");
+        }
         return false;
     }
 
@@ -37,6 +48,8 @@ function hostedai_wallet_credit_topup_service($hosting, $context = '')
 
     $amount = $item ? (float) $item->amount : 0.0;
     if ($amount <= 0) {
+        logActivity("hostedai wallet: top-up service {$hosting->id} matched the top-up group but had no"
+            . " positive invoice amount — nothing credited. Check the invoice item for this service.");
         return false;
     }
 
