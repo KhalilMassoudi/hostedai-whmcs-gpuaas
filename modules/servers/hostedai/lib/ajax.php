@@ -36,11 +36,20 @@ use WHMCS\Module\Server\HosteDai\Helper;
 use WHMCS\Database\Capsule;
 
 if (!defined('HOSTEDAI_TERMINAL_JWT_SECRET')) {
+    // The real secret lives outside the webroot entirely — in Plesk's
+    // per-domain "private/" folder, a sibling of httpdocs/ that the
+    // webserver never serves no matter what (unlike a file sitting
+    // inside the module, which only stays safe as long as PHP keeps
+    // executing it correctly). That file just does:
+    //   <?php define('HOSTEDAI_TERMINAL_JWT_SECRET', 'the-real-secret');
     // Must match TERMINAL_JWT_SECRET in the terminal-sidecar's systemd
-    // environment exactly — this is how the browser terminal feature's
-    // two halves (this PHP endpoint and the Node sidecar) trust each
-    // other. Generate one with: openssl rand -hex 32
-    define('HOSTEDAI_TERMINAL_JWT_SECRET', '');
+    // environment exactly. Generate one with: openssl rand -hex 32
+    $secretsFile = dirname($_SERVER['DOCUMENT_ROOT']) . '/private/hostedai-secrets.php';
+    if (file_exists($secretsFile)) {
+        require $secretsFile;
+    } else {
+        define('HOSTEDAI_TERMINAL_JWT_SECRET', '');
+    }
 }
 
 // Handle AJAX requests
