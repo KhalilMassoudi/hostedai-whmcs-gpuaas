@@ -26,7 +26,7 @@ if (php_sapi_name() !== 'cli') {
         // own crontab, then pass it as ?key=<value>.
         define('HOSTEDAI_CRON_SECRET', '');
     }
-    if (HOSTEDAI_CRON_SECRET === '' || ($_GET['key'] ?? '') !== HOSTEDAI_CRON_SECRET) {
+    if (HOSTEDAI_CRON_SECRET === '' || !hash_equals(HOSTEDAI_CRON_SECRET, (string) ($_GET['key'] ?? ''))) {
         http_response_code(403);
         exit('Forbidden');
     }
