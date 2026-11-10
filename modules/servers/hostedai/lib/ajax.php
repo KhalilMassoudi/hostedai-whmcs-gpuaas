@@ -64,6 +64,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         generateOTL();
     } elseif ($action === 'generate_terminal_token') {
         generateTerminalToken();
+    } elseif ($action === 'check_service_status') {
+        checkServiceStatus();
     } else {
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
     }
@@ -325,6 +327,10 @@ function generateTerminalToken()
             'jti' => bin2hex(random_bytes(16)),
             'exp' => time() + 120,
             'instanceId' => $instanceId,
+            // Lets the sidecar poll check_service_status (below) while a
+            // session is open, so a service suspended mid-session gets its
+            // terminal killed instead of running indefinitely.
+            'serviceId' => $serviceId,
         ];
 
         $token = hostedai_terminal_jwt_encode($payload, HOSTEDAI_TERMINAL_JWT_SECRET);
@@ -332,6 +338,41 @@ function generateTerminalToken()
         echo json_encode(['success' => true, 'token' => $token]);
     } catch (Exception $e) {
         logActivity('hostedai terminal token AJAX error: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'An error occurred']);
+    }
+}
+
+/**
+ * Server-to-server only — called by the terminal sidecar itself (not a
+ * browser, no session/cookies involved), polled periodically for the
+ * lifetime of an open terminal session, so a service suspended mid-
+ * session gets its terminal killed instead of running indefinitely.
+ * Authenticated with the same shared secret the sidecar already holds
+ * (the signing secret) rather than a WHMCS session, since the caller
+ * has none.
+ */
+function checkServiceStatus()
+{
+    try {
+        $secret = $_POST['secret'] ?? '';
+        if (HOSTEDAI_TERMINAL_JWT_SECRET === '' || !hash_equals(HOSTEDAI_TERMINAL_JWT_SECRET, (string) $secret)) {
+            echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+            return;
+        }
+
+        $serviceId = (int) ($_POST['service_id'] ?? 0);
+        if (!$serviceId) {
+            echo json_encode(['success' => false, 'message' => 'Missing service_id']);
+            return;
+        }
+
+        $service = Capsule::table('tblhosting')->where('id', $serviceId)->first();
+        echo json_encode([
+            'success' => true,
+            'active'  => (bool) ($service && $service->domainstatus === 'Active'),
+        ]);
+    } catch (Exception $e) {
+        logActivity('hostedai check_service_status error: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'An error occurred']);
     }
 }
