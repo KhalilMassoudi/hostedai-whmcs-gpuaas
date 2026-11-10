@@ -414,7 +414,7 @@ class Helper
 
             $results = localAPI($command, $postData);
 
-            if ($command = 'ModuleTerminate') {
+            if ($command === 'ModuleTerminate') {
                 if ($results['httpcode'] == 200 && $results['result'] == 'success') {
                     $this->delete_teamDetail($serviceId, $pid);
                 }
@@ -1381,6 +1381,28 @@ class Helper
         return json_decode($normalized, true) ?? [];
     }
 
+    /**
+     * WHMCS populates $params with the server's decrypted API password
+     * (serverpassword) on every module function call. Every catch block
+     * in hostedai.php logs the full $params to WHMCS's Module Log on any
+     * exception — that password was sitting there in plaintext for any
+     * admin with Log access. Mask it, and the client's own account
+     * password field some installs also carry in $params, before logging.
+     *
+     * @param array $params
+     * @return array Same array with sensitive fields replaced.
+     */
+    public static function maskParamsForLog(array $params)
+    {
+        $sensitiveKeys = ['serverpassword', 'password'];
+        foreach ($sensitiveKeys as $key) {
+            if (isset($params[$key])) {
+                $params[$key] = '[redacted]';
+            }
+        }
+        return $params;
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
 
     /* Retrieve the Curl API response.
@@ -1422,9 +1444,12 @@ class Helper
         curl_setopt($curl, CURLOPT_URL, $baseUrl . $endpoint);
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 15);
-        curl_setopt($curl, CURLOPT_MAXREDIRS, 10);
         curl_setopt($curl, CURLOPT_TIMEOUT, 60);
-        curl_setopt($curl, CURLOPT_FOLLOWLOCATION, 1);
+        // Never follow redirects: curl forwards custom headers (our
+        // x-api-key included) to whatever host a redirect points at,
+        // which would hand the API key to any host Hosted AI's own API
+        // ever redirected to — intentionally or via a compromise.
+        curl_setopt($curl, CURLOPT_FOLLOWLOCATION, 0);
 
         if (isset($this->token) && $this->token != '') {
             curl_setopt($curl, CURLOPT_HTTPHEADER, [
@@ -1459,12 +1484,28 @@ class Helper
             $data = ['url' => $baseUrl . $endpoint];
         }
 
+        // getInstanceCredentials returns a live SSH password in plain
+        // text; createOneTimeLoginToken returns a URL that itself logs
+        // someone straight into Hosted AI, no password needed. Every API
+        // call used to be logged here in full — both of those sat in
+        // WHMCS's Module Log in plaintext, visible to any admin with Log
+        // access. Log that the call happened and what came back
+        // (success/failure), not the credentials themselves.
+        $sensitiveActions = ['getInstanceCredentials', 'createOneTimeLoginToken'];
+        if (in_array($action, $sensitiveActions, true)) {
+            $logRequest  = '[redacted]';
+            $logResponse = 'HTTP ' . $httpCode . ' [redacted — contains live credentials]';
+        } else {
+            $logRequest  = $data;
+            $logResponse = $returnRaw ? $response : json_decode($response);
+        }
+
         if ($returnRaw) {
-            logModuleCall("Hostedai", $action, $data, $response);
+            logModuleCall("Hostedai", $action, $logRequest, $logResponse);
             return ['httpcode' => $httpCode, 'result' => $response];
         }
 
-        logModuleCall("Hostedai", $action, $data, json_decode($response));
+        logModuleCall("Hostedai", $action, $logRequest, $logResponse);
         return ['httpcode' => $httpCode, 'result' => json_decode($response)];
     }
 }
