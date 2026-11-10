@@ -281,7 +281,7 @@
 {/literal}
 
 <script type="text/javascript">
-var HOSTEDAI_CSRF_TOKEN = "{$token}";
+var HOSTEDAI_CSRF_TOKEN = "{$csrfToken}";
 </script>
 
 <div class="gpu-dashboard">
@@ -718,7 +718,7 @@ var HOSTEDAI_CSRF_TOKEN = "{$token}";
       <div class="gpu-actions">
 
         <form method="post" style="margin:0">
-          <input type="hidden" name="token" value="{$token}">
+          <input type="hidden" name="token" value="{$csrfToken}">
           <input type="hidden" name="instance_action" value="start">
           <button type="submit" class="gpu-btn gpu-btn-start"
             {if $instanceStatus == 'running'}disabled title="Already running"
@@ -728,7 +728,7 @@ var HOSTEDAI_CSRF_TOKEN = "{$token}";
         </form>
 
         <form method="post" style="margin:0">
-          <input type="hidden" name="token" value="{$token}">
+          <input type="hidden" name="token" value="{$csrfToken}">
           <input type="hidden" name="instance_action" value="stop">
           <button type="submit" class="gpu-btn gpu-btn-stop"
             {if $instanceStatus == 'stopped' || $instanceStatus == 'stop'}disabled title="Already stopped"
@@ -738,7 +738,7 @@ var HOSTEDAI_CSRF_TOKEN = "{$token}";
         </form>
 
         <form method="post" style="margin:0">
-          <input type="hidden" name="token" value="{$token}">
+          <input type="hidden" name="token" value="{$csrfToken}">
           <input type="hidden" name="instance_action" value="restart">
           <button type="submit" class="gpu-btn gpu-btn-restart"
             {if $instanceStatus == 'stopped' || $instanceStatus == 'stop'}disabled title="Start the instance first"
@@ -748,7 +748,7 @@ var HOSTEDAI_CSRF_TOKEN = "{$token}";
         </form>
 
         <form method="post" style="margin:0;margin-left:auto" onsubmit="return confirmDelete()">
-          <input type="hidden" name="token" value="{$token}">
+          <input type="hidden" name="token" value="{$csrfToken}">
           <input type="hidden" name="delete_instance" value="1">
           <button type="submit" class="gpu-btn gpu-btn-delete">&#128465; Delete Instance</button>
         </form>
@@ -764,14 +764,14 @@ var HOSTEDAI_CSRF_TOKEN = "{$token}";
       {if $sharedVolumeId}
       <div class="gpu-actions">
         <form method="post" style="margin:0" onsubmit="return confirm('Delete this shared volume? This cannot be undone.')">
-          <input type="hidden" name="token" value="{$token}">
+          <input type="hidden" name="token" value="{$csrfToken}">
           <input type="hidden" name="delete_shared_volume" value="1">
           <button type="submit" class="gpu-btn gpu-btn-delete">&#128465; Delete Shared Volume</button>
         </form>
       </div>
       {elseif $sharedStorageOptions}
       <form method="post" class="gpu-actions">
-        <input type="hidden" name="token" value="{$token}">
+        <input type="hidden" name="token" value="{$csrfToken}">
         <select name="shared_storage_choice" class="gpu-select" required>
           <option value="">Select a storage tier&hellip;</option>
           {foreach $sharedStorageOptions as $option}

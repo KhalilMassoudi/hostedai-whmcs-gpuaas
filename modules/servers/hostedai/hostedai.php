@@ -1392,13 +1392,18 @@ function hostedai_ClientArea(array $params)
         // the usage cron would then never see again, since it only queries
         // Active services. Without the token check, a hostile page could
         // submit any of these forms on a logged-in client's behalf.
-        $isServiceActive = ($params['status'] ?? '') === 'Active';
+        // Read straight from tblhosting rather than trusting $params['status']
+        // to be populated and current in this context — this is the one
+        // thing every action below is gated on, so it shouldn't depend on
+        // an assumption about what WHMCS hands this function.
+        $currentDomainStatus = Capsule::table('tblhosting')->where('id', $params['serviceid'])->value('domainstatus');
+        $isServiceActive = $currentDomainStatus === 'Active';
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_shared_volume'])) {
             check_token("WHMCS.default");
             if (!$isServiceActive) {
                 logActivity('hostedai: denied delete_shared_volume for service ' . $params['serviceid']
-                    . ' — service status is ' . ($params['status'] ?? 'unknown') . ', not Active');
+                    . ' — service status is ' . ($currentDomainStatus ?? 'unknown') . ', not Active');
             } else {
             $sharedVolumeId = $helper->getSharedVolumeIdFromNotes($params['serviceid']);
             if (!empty($sharedVolumeId)) {
@@ -1418,7 +1423,7 @@ function hostedai_ClientArea(array $params)
             check_token("WHMCS.default");
             if (!$isServiceActive) {
                 logActivity('hostedai: denied create_shared_volume for service ' . $params['serviceid']
-                    . ' — service status is ' . ($params['status'] ?? 'unknown') . ', not Active');
+                    . ' — service status is ' . ($currentDomainStatus ?? 'unknown') . ', not Active');
             } else {
             $sharedStorageMapJson = $params['configoption21'] ?? '';
             $sharedStorageMap = Helper::decodeAdminJsonMap($sharedStorageMapJson);
@@ -1463,7 +1468,7 @@ function hostedai_ClientArea(array $params)
 
             if (!$isServiceActive) {
                 logActivity('hostedai: denied instance action for service ' . $params['serviceid']
-                    . ' — service status is ' . ($params['status'] ?? 'unknown') . ', not Active');
+                    . ' — service status is ' . ($currentDomainStatus ?? 'unknown') . ', not Active');
             } else {
 
             $instanceId = $helper->getPoolSubscriptionIdFromNotes(
@@ -1656,6 +1661,13 @@ function hostedai_ClientArea(array $params)
                     return array(
                         'templatefile' => $templateFile,
                         'templateVariables' => array(
+                            // Generated explicitly here rather than relying
+                            // on WHMCS auto-assigning {$token}/{$csrfToken}
+                            // into a module template's own scope — not
+                            // something this module's templates should
+                            // depend on without being certain of it. Same
+                            // function, same fail-closed guard, as terminal.php.
+                            'csrfToken'           => function_exists('csrfToken') ? csrfToken() : '',
                             'walletBalance'       => $walletBalance,
                             'walletHistory'       => $walletHistory,
                             'walletTopupUrl'      => $walletTopupUrl,
