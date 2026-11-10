@@ -18,7 +18,7 @@
                     <a href="{$WEB_ROOT}/{$hostedaiWalletTopupUrl}" class="dash-top-credits-pill"
                         title="Shared balance across all your Pay-As-You-Go GPU services. Top up, then choose your GPU Cloud.">
                         <span class="circle-dott green"></span>
-                        <span class="credits-amount">${$hostedaiWalletBalance|string_format:"%.2f"}</span>
+                        <span class="credits-amount">{$hostedaiWalletBalance|string_format:"%.2f"} DT</span>
                         <span class="credits-label">GPU Credits</span>
                     </a>
                     {/if}

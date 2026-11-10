@@ -84,7 +84,7 @@ function hostedai_wallet_credit_topup_service($hosting, $context = '')
         Capsule::table('tblhosting')->where('id', $hosting->id)->update([
             'domainstatus' => 'Terminated',
         ]);
-        logActivity("hostedai wallet: credited \${$amount} to client {$hosting->userid} (service #{$hosting->id}) {$context}");
+        logActivity("hostedai wallet: credited {$amount} DT to client {$hosting->userid} (service #{$hosting->id}) {$context}");
     }
 
     return $applied;
@@ -197,7 +197,7 @@ function hostedai_wallet_claw_back_topup_service($hosting, $context = '')
     $applied = hostedai_wallet_debit($hosting->userid, $amount, $description, $refundRef);
 
     if ($applied) {
-        logActivity("hostedai wallet: clawed back \${$amount} from client {$hosting->userid} (service #{$hosting->id}) {$context}");
+        logActivity("hostedai wallet: clawed back {$amount} DT from client {$hosting->userid} (service #{$hosting->id}) {$context}");
     }
 
     return $applied;

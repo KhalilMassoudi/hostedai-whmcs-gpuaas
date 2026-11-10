@@ -398,7 +398,7 @@ function hostedai_ConfigOptions(array $params)
             'Type' => 'text',
             'Size' => '10',
             'Default' => '0',
-            'Description' => 'Extra flat USD/hour on top of Hosted AI\'s own vendor cost. Leave at 0 unless you want a separate flat platform fee — the Hosted AI Pricing Policy already carries your margin. Used by hostedai_usage_cron.php.',
+            'Description' => 'Extra flat DT/hour on top of Hosted AI\'s own vendor cost (GPU Credits are a TND balance — enter this directly in TND, no conversion applied). Leave at 0 unless you want a separate flat platform fee — the Hosted AI Pricing Policy already carries your margin. Used by hostedai_usage_cron.php.',
         ),
 
         // configoption20 — usage-based billing: recipe name -> ONE-TIME setup
@@ -410,7 +410,7 @@ function hostedai_ConfigOptions(array $params)
             'Rows' => '5',
             'Cols' => '50',
             'Default' => '{"No Recipe":0,"vLLM TinyLlama":5,"Ollama":3}',
-            'Description' => 'JSON map of recipe name -> ONE-TIME USD setup fee, deducted from the Hosted AI Wallet once when the instance is created (not per hour). Usage-Based Billing Mode only.',
+            'Description' => 'JSON map of recipe name -> ONE-TIME TND setup fee (GPU Credits are a TND balance — enter directly in TND, no conversion applied), deducted from GPU Credits once when the instance is created (not per hour). Usage-Based Billing Mode only.',
         ),
 
         // configoption21 — Shared Storage option name -> storage_block_id map.
@@ -475,6 +475,21 @@ function hostedai_ConfigOptions(array $params)
             'Cols' => '50',
             'Default' => '',
             'Description' => 'JSON: {"accelerator_map":{"<GPU Accelerator option name>":{"pool_id":8,"region_id":6}},"flavor_map":{"<Instance Flavor option name>":"<instance_type_id UUID>"},"storage_map":{"<Storage Size option name>":"<storage_block_id UUID>"}}. Only used when the matching Configurable Option is assigned to this product — leave blank for admin-fixed products.',
+        ),
+
+        // configoption25 — GPU Credits are a TND balance (top-ups are
+        // sold in TND; the client-facing pages show "DT"), but Hosted
+        // AI's own vendor cost comes back in USD. This rate converts
+        // that USD vendor cost to TND before it's deducted — it does
+        // NOT affect configoption19 (Base Hourly Rate) or configoption20
+        // (Recipe Setup Fee Map), which the admin types directly in TND
+        // already, same as any other admin-set field in this module.
+        'usd_to_tnd_rate' => array(
+            'FriendlyName' => 'USD to TND Exchange Rate',
+            'Type' => 'text',
+            'Size' => '10',
+            'Default' => '0',
+            'Description' => 'Multiplies Hosted AI\'s USD vendor cost before it is deducted from GPU Credits (a TND balance). Must be set above 0 — usage charging is skipped (and retried next run) until it is. Update periodically to track the real rate; it is not fetched live.',
         ),
 
     );
@@ -843,7 +858,7 @@ function hostedai_CreateAccount(array $params)
                             'recipe_setup_' . $serviceId
                         );
                         if ($recipeFeeDebited) {
-                            logActivity("hostedai: charged one-time recipe setup fee \${$recipeFee} for '{$selectedRecipe}' (service {$serviceId})");
+                            logActivity("hostedai: charged one-time recipe setup fee {$recipeFee} DT for '{$selectedRecipe}' (service {$serviceId})");
                         } else {
                             logActivity("hostedai: recipe setup fee debit failed for service {$serviceId} (client {$clientId}) — wallet may be exhausted");
                         }

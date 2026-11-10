@@ -150,6 +150,13 @@ try {
             $product = Capsule::table('tblproducts')->where('id', $service->packageid)->first();
             $rate = (float) ($product->configoption19 ?? 0);
 
+            // GPU Credits are a TND balance (top-ups are sold in TND,
+            // every client-facing page shows "DT"), but Hosted AI's own
+            // vendor cost (fetched below) comes back in USD. Previously
+            // that USD number was deducted directly as if it were TND —
+            // a 150 TND top-up was being spent as if it were $150.
+            $usdToTndRate = (float) ($product->configoption25 ?? 0);
+
             // Fixed Subscription products are billed entirely through their
             // WHMCS recurring invoice (+ native overdue-suspension automation,
             // see hostedai_SuspendAccount/TerminateAccount). Credit must never
@@ -201,19 +208,30 @@ try {
                     continue;
                 }
 
+                if ($usdToTndRate <= 0) {
+                    // Never guess a rate and never charge raw USD as if
+                    // it were TND — skip this window and retry next run
+                    // (same as a getWindowUsage failure above) until the
+                    // admin sets configoption25 for this product.
+                    logActivity("hostedai usage cron: service {$serviceId} skipped — USD to TND Exchange Rate (configoption25) is not set on product {$service->packageid}. Will retry next run.");
+                    continue;
+                }
+
                 // ── Step 3e/f: compute charge ────────────────────────────
                 // Charge = vendor cost reported by Hosted AI for this window
                 // (driven by the team's Pricing Policy — already includes our
-                // margin once a real, non-zero policy is assigned) PLUS the
-                // admin's flat platform rate (configoption19, $/hour). Recipe
-                // pricing is a separate one-time fee charged once at
-                // CreateAccount — not part of this recurring rate.
+                // margin once a real, non-zero policy is assigned), converted
+                // from USD to TND, PLUS the admin's flat platform rate
+                // (configoption19, already entered directly in TND/hour by
+                // the admin — not converted). Recipe pricing is a separate
+                // one-time fee charged once at CreateAccount — not part of
+                // this recurring rate.
                 //
                 // WHMCS AddCredit only accepts 2 decimal places, but hourly
                 // usage at low rates produces fractions of a cent. Never
                 // round those away — bank them in pending_charge until they
-                // cross the $0.01 minimum, so no usage is ever silently lost.
-                $rawCharge = $vendorCost + ($hours * $rate);
+                // cross the 0.01 DT minimum, so no usage is ever silently lost.
+                $rawCharge = ($vendorCost * $usdToTndRate) + ($hours * $rate);
 
                 if ($rawCharge > 0) {
                     $totalDue   = $rawCharge + (float) $usageRow->pending_charge;
@@ -227,7 +245,7 @@ try {
                         $debited = hostedai_wallet_debit(
                             $service->userid,
                             $chargeable,
-                            "Hosted AI usage: {$hours}h, vendor cost \${$vendorCost} + platform rate \${$rate}/h (service #{$serviceId}, {$startStr} to {$endStr})",
+                            "Hosted AI usage: {$hours}h, vendor cost \${$vendorCost} USD (converted at {$usdToTndRate}) + platform rate {$rate} DT/h (service #{$serviceId}, {$startStr} to {$endStr})",
                             $walletRef
                         );
 
@@ -242,7 +260,7 @@ try {
                                     'updated_at'      => $nowStr,
                                 ]);
                             $totalChargedThisRun += $chargeable;
-                            logActivity("hostedai usage cron: charged \${$chargeable} ({$hours}h, vendor cost \${$vendorCost} + platform rate \${$rate}/h, remainder \${$remainder} banked) from wallet of client {$service->userid} for service {$serviceId}");
+                            logActivity("hostedai usage cron: charged {$chargeable} DT ({$hours}h, vendor cost \${$vendorCost} USD converted at {$usdToTndRate} + platform rate {$rate} DT/h, remainder {$remainder} DT banked) from wallet of client {$service->userid} for service {$serviceId}");
                         } else {
                             logActivity("hostedai usage cron: wallet debit failed for client {$service->userid} service {$serviceId} — will retry window next run");
                             // Do NOT advance last_billed_at — retry the whole window next run.
@@ -258,7 +276,7 @@ try {
                                 'pending_charge' => $totalDue,
                                 'updated_at'     => $nowStr,
                             ]);
-                        logActivity("hostedai usage cron: banked \${$totalDue} (below \$0.01 minimum) for service {$serviceId}");
+                        logActivity("hostedai usage cron: banked {$totalDue} DT (below 0.01 DT minimum) for service {$serviceId}");
                     }
                 } else {
                     // Zero vendor cost and zero platform rate — nothing to
@@ -359,7 +377,7 @@ try {
                 logActivity("hostedai usage cron: suspended service {$serviceId} (client {$service->userid}) — wallet exhausted (balance: {$currentCredit})");
 
                 hostedai_sendLowCreditEmail($client, $service, 0, 'Service Suspended: GPU Credits Exhausted',
-                    "Your Hosted AI service (#{$serviceId}) has been suspended because your GPU Credits balance reached \$0. "
+                    "Your Hosted AI service (#{$serviceId}) has been suspended because your GPU Credits balance reached 0 DT. "
                     . "Please top up your GPU Credits to resume this service.");
                 logActivity("hostedai usage cron: sent suspension notice to client {$service->userid} (service {$serviceId})");
             }
@@ -369,7 +387,7 @@ try {
         }
     }
 
-    logActivity("hostedai usage billing: {$servicesChecked} services checked, \${$totalChargedThisRun} charged total, {$suspendedCount} suspended");
+    logActivity("hostedai usage billing: {$servicesChecked} services checked, {$totalChargedThisRun} DT charged total, {$suspendedCount} suspended");
 } catch (\Exception $e) {
     logActivity('hostedai usage cron: fatal error: ' . $e->getMessage());
 }

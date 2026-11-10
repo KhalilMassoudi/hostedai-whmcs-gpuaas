@@ -351,7 +351,7 @@ var HOSTEDAI_CSRF_TOKEN = "{$token}";
     <div class="gpu-section-header">
       &#128176; GPU Credits
       <span class="gpu-credit-balance {if $walletBalance > 0}gpu-credit-balance-positive{else}gpu-credit-balance-zero{/if}">
-        ${$walletBalance|string_format:"%.2f"}
+        {$walletBalance|string_format:"%.2f"} DT
       </span>
       <a href="{$WEB_ROOT}/{$walletTopupUrl}" class="gpu-btn gpu-btn-start" style="margin-left:12px;padding:4px 14px;font-size:12px">
         &#128181; Recharge GPU Credits
@@ -387,7 +387,7 @@ var HOSTEDAI_CSRF_TOKEN = "{$token}";
             </td>
             <td>{$tx.description|default:'&#8212;'}</td>
             <td style="text-align:right;white-space:nowrap" class="{if $tx.isPositive}gpu-credit-amount-positive{else}gpu-credit-amount-negative{/if}">
-              {if $tx.isPositive}+{else}-{/if}${$tx.amount|string_format:"%.2f"}
+              {if $tx.isPositive}+{else}-{/if}{$tx.amount|string_format:"%.2f"} DT
             </td>
           </tr>
           {/foreach}

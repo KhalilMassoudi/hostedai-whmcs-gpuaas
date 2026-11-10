@@ -3,7 +3,7 @@
     <div class="account-credit-banner-info">
         <span class="account-credit-banner-label">{lang key='homepage.yourAccount'} &mdash; GPU Credits</span>
         <span class="account-credit-banner-amount {if $hostedaiWalletBalance > 0}account-credit-positive{else}account-credit-zero{/if}">
-            ${$hostedaiWalletBalance|string_format:"%.2f"}
+            {$hostedaiWalletBalance|string_format:"%.2f"} DT
         </span>
         <span class="account-credit-banner-note" style="display:block;font-size:11px;opacity:.7;margin-top:2px">
             Shared balance across all your Pay-As-You-Go GPU services — separate from any other account balance. Top up, then choose your GPU Cloud.
