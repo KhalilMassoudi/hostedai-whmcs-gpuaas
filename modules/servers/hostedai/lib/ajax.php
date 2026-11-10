@@ -23,10 +23,14 @@ if (!defined('WHMCS')) {
     }
     
     if (!$whmcsInitialized) {
+        // No path details in the response — this is reachable by anyone,
+        // logged in or not, and server filesystem paths are nobody's
+        // business. The real paths tried are still in the server's own
+        // error/activity log if this ever needs debugging.
+        error_log('hostedai ajax.php: WHMCS initialization failed. Tried paths: ' . implode(', ', $possiblePaths));
         echo json_encode([
-            'success' => false, 
-            'message' => 'WHMCS initialization failed',
-            'debug' => 'Tried paths: ' . implode(', ', $possiblePaths)
+            'success' => false,
+            'message' => 'WHMCS initialization failed'
         ]);
         exit;
     }
@@ -69,6 +73,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 function generateOTL() {
     try {
+        check_token("WHMCS.default");
+
         $serviceId = (int) ($_POST['service_id'] ?? 0);
         $staticLoginUrl = $_POST['static_login_url'] ?? '';
 
@@ -109,6 +115,17 @@ function generateOTL() {
             return;
         }
 
+        if ($service->domainstatus !== 'Active') {
+            logActivity('hostedai: OTL request for service ' . $serviceId
+                . ' denied — status is ' . $service->domainstatus . ', not Active');
+            echo json_encode([
+                'success' => false,
+                'message' => 'This service is not active.',
+                'fallback_url' => $staticLoginUrl
+            ]);
+            return;
+        }
+
         $client = Capsule::table('tblclients')->where('id', $sessionClientId)->first();
         if (!$client || empty($client->email)) {
             echo json_encode([
@@ -121,7 +138,7 @@ function generateOTL() {
         $userEmail = $client->email;
 
         // Get server details
-        $server = Capsule::table('tblservers')->where('id', $service->server)->first();
+        $server = Capsule::table('tblservers')->where('id', $service->server)->where('type', 'hostedai')->first();
         if (!$server) {
             echo json_encode([
                 'success' => false,
@@ -173,8 +190,10 @@ function generateOTL() {
 
 /**
  * Mints a short-lived, single-use token for the browser SSH terminal
- * sidecar. The browser never sees the SSH password directly — only this
- * token, which the sidecar decodes to get connection details, and which
+ * sidecar, carrying only an instance ID — never the SSH password. The
+ * sidecar fetches live credentials itself from Hosted AI at connection
+ * time, so nothing more sensitive than an instance reference ever sits
+ * in a token the browser holds or that rides in a URL. The token
  * expires in 2 minutes and can only open one session.
  *
  * Ownership is checked against the logged-in client's own session
@@ -185,6 +204,8 @@ function generateOTL() {
 function generateTerminalToken()
 {
     try {
+        check_token("WHMCS.default");
+
         if (empty($_SESSION['uid'])) {
             echo json_encode(['success' => false, 'message' => 'Not logged in']);
             return;
@@ -203,7 +224,18 @@ function generateTerminalToken()
             return;
         }
 
-        $server = Capsule::table('tblservers')->where('id', $service->server)->first();
+        if ($service->domainstatus !== 'Active') {
+            logActivity("hostedai terminal: denied token request for service #{$serviceId} — status is {$service->domainstatus}, not Active");
+            echo json_encode(['success' => false, 'message' => 'This service is not active.']);
+            return;
+        }
+
+        // A service on another server module entirely (not hostedai) would
+        // otherwise have its own server's decrypted password sent to its
+        // own hostname below — harmless in the sense it goes back to its
+        // rightful host, but there's no reason this endpoint should ever
+        // touch a non-hostedai server at all.
+        $server = Capsule::table('tblservers')->where('id', $service->server)->where('type', 'hostedai')->first();
         if (!$server) {
             echo json_encode(['success' => false, 'message' => 'Server configuration not found']);
             return;
@@ -238,15 +270,18 @@ function generateTerminalToken()
             return;
         }
 
+        // The token carries only the instance ID — never the SSH password.
+        // The sidecar fetches live credentials itself, directly from
+        // Hosted AI, at connection time. A signed JWT is not an encrypted
+        // one: anything embedded in it is trivially recoverable by
+        // base64-decoding the payload, and this token also rides in the
+        // WebSocket URL (so it lands in reverse-proxy access logs) — it
+        // must never carry anything more sensitive than an instance
+        // reference.
         $payload = [
             'jti' => bin2hex(random_bytes(16)),
             'exp' => time() + 120,
-            'ssh' => [
-                'host'     => $cred->ip,
-                'port'     => (int) ($cred->port ?: 22),
-                'username' => $cred->username,
-                'password' => $cred->password,
-            ],
+            'instanceId' => $instanceId,
         ];
 
         $token = hostedai_terminal_jwt_encode($payload, HOSTEDAI_TERMINAL_JWT_SECRET);

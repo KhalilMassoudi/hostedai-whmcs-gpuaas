@@ -51,15 +51,27 @@ if (!$service || (int) $service->userid !== (int) $_SESSION['uid']) {
     exit('Service not found.');
 }
 
+// This page renders outside WHMCS's normal Smarty template flow, so the
+// usual {$token} a .tpl gets automatically isn't available here — generate
+// one directly so the token request below can still be CSRF-protected.
+// NOTE: verify this against your WHMCS version after deploying — if
+// csrfToken() isn't the right call for this WHMCS release, the terminal
+// token request will fail its check_token() check on the ajax.php side,
+// which is the first thing to check if "Terminal" stops connecting.
+$hostedaiCsrfToken = function_exists('csrfToken') ? csrfToken() : '';
+
 ?><!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Terminal — Service #<?php echo $serviceId; ?></title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
-<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"
+  integrity="sha384-LJcOxlx9IMbNXDqJ2axpfEQKkAYbFjJfhXexLfiRJhjDU81mzgkiQq8rkV0j6dVh" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"
+  integrity="sha384-/nfmYPUzWMS6v2atn8hbljz7NE0EI1iGx34lJaNzyVjWGDzMv+ciUZUeJpKA3Glc" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"
+  integrity="sha384-AQLWHRKAgdTxkolJcLOELg4E9rE89CPE2xMy3tIRFn08NcGKPTsELdvKomqji+DL" crossorigin="anonymous"></script>
 <style>
   :root {
     --bg: #1e1e1e; --bar-bg: #2d2d2d; --text: #fff;
@@ -126,6 +138,7 @@ if (!$service || (int) $service->userid !== (int) $_SESSION['uid']) {
 
   <script>
   var HOSTEDAI_SERVICE_ID = <?php echo $serviceId; ?>;
+  var HOSTEDAI_CSRF_TOKEN = <?php echo json_encode($hostedaiCsrfToken); ?>;
 
   var DARK_THEME = { background: '#1e1e1e', foreground: '#d4d4d4', cursor: '#d4d4d4' };
   var LIGHT_THEME = { background: '#ffffff', foreground: '#1e1e1e', cursor: '#1e1e1e' };
@@ -207,6 +220,7 @@ if (!$service || (int) $service->userid !== (int) $_SESSION['uid']) {
   var formData = new FormData();
   formData.append('action', 'generate_terminal_token');
   formData.append('service_id', HOSTEDAI_SERVICE_ID);
+  formData.append('token', HOSTEDAI_CSRF_TOKEN);
 
   fetch('/modules/servers/hostedai/lib/ajax.php', { method: 'POST', body: formData })
       .then(function (r) { return r.json(); })
