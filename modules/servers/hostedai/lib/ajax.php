@@ -155,6 +155,49 @@ function generateOTL() {
         ];
         
         $helper = new Helper($params);
+
+        // Hosted AI's create-otl endpoint takes only an email and will
+        // issue a login link for any existing one — it has no concept of
+        // "this WHMCS session" at all. WHMCS's own client email field is
+        // self-service editable (Account Details), so without this check
+        // a customer could set their own email to any other customer's
+        // (or an admin's) Hosted AI email and get a valid login link for
+        // that other account. Verifying the email actually belongs to a
+        // member of *this client's own team* closes that: a customer
+        // can't make themselves a member of someone else's team just by
+        // typing that person's email into a WHMCS form.
+        $teamId = $helper->getClientTeamId($sessionClientId);
+        if (empty($teamId)) {
+            logActivity("hostedai: OTL request for service {$serviceId} denied — client {$sessionClientId} has no resolvable team");
+            echo json_encode([
+                'success' => false,
+                'message' => 'Unable to verify your account. Using standard login.',
+                'fallback_url' => $staticLoginUrl
+            ]);
+            return;
+        }
+
+        $teamMembersResponse = $helper->getTeamMembers($teamId);
+        $isOwnTeamMember = false;
+        if (($teamMembersResponse['httpcode'] ?? 0) == 200 && !empty($teamMembersResponse['result']->members)) {
+            foreach ($teamMembersResponse['result']->members as $member) {
+                if (strcasecmp($member->user->email ?? '', $userEmail) === 0) {
+                    $isOwnTeamMember = true;
+                    break;
+                }
+            }
+        }
+
+        if (!$isOwnTeamMember) {
+            logActivity("hostedai: OTL request for service {$serviceId} denied — email {$userEmail} is not a member of client {$sessionClientId}'s team {$teamId}");
+            echo json_encode([
+                'success' => false,
+                'message' => 'Unable to verify your account. Using standard login.',
+                'fallback_url' => $staticLoginUrl
+            ]);
+            return;
+        }
+
         $otlResponse = $helper->createOneTimeLoginToken($userEmail);
         
         if ($otlResponse && $otlResponse['httpcode'] == 201 && isset($otlResponse['result']->url)) {
