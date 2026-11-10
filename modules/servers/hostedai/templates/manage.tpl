@@ -280,6 +280,10 @@
 </style>
 {/literal}
 
+<script type="text/javascript">
+var HOSTEDAI_CSRF_TOKEN = "{$token}";
+</script>
+
 <div class="gpu-dashboard">
 
   {if $actionBlockedMessage}
@@ -413,9 +417,9 @@
         <tbody>
           {foreach from=$teammembers key=key item=member}
           <tr>
-            <td>{$member->user->email|default:'&#8212;'}</td>
-            <td>{$member->role->label|default:'&#8212;'}</td>
-            <td>{$member->status|ucfirst|default:'&#8212;'}</td>
+            <td>{$member->user->email|escape|default:'&#8212;'}</td>
+            <td>{$member->role->label|escape|default:'&#8212;'}</td>
+            <td>{$member->status|escape|ucfirst|default:'&#8212;'}</td>
           </tr>
           {foreachelse}
           <tr>
@@ -494,8 +498,8 @@
         <tbody>
           {foreach from=$instances item=instance}
           <tr>
-            <td>{$instance->name}</td>
-            <td>{$instance->status|ucfirst}</td>
+            <td>{$instance->name|escape}</td>
+            <td>{$instance->status|escape|ucfirst}</td>
             <td>{$instance->gpu}</td>
             <td>{$instance->created_at}</td>
           </tr>
@@ -524,7 +528,7 @@
       <table class="gpu-info-table">
         <tr>
           <th>Name</th>
-          <td>{$instanceDetails->name|default:'&#8212;'}</td>
+          <td>{$instanceDetails->name|escape|default:'&#8212;'}</td>
         </tr>
         <tr>
           <th>Instance ID</th>
@@ -540,7 +544,7 @@
             {elseif $instanceStatus == 'provisioning' || $instanceStatus == 'starting'}
               <span class="gpu-badge gpu-badge-provisioning">&#9679; Provisioning</span>
             {else}
-              <span class="gpu-badge gpu-badge-provisioning">&#9679; {$instanceDetails->status|default:'Unknown'}</span>
+              <span class="gpu-badge gpu-badge-provisioning">&#9679; {$instanceDetails->status|escape|default:'Unknown'}</span>
             {/if}
           </td>
         </tr>
@@ -548,9 +552,9 @@
           <th>Region</th>
           <td>
             {if $instanceDetails->region}
-              {$instanceDetails->region->region_name|default:'&#8212;'}
+              {$instanceDetails->region->region_name|escape|default:'&#8212;'}
               {if $instanceDetails->region->city}
-                <span style="opacity:0.5;font-size:12px">({$instanceDetails->region->city})</span>
+                <span style="opacity:0.5;font-size:12px">({$instanceDetails->region->city|escape})</span>
               {/if}
             {else}&#8212;{/if}
           </td>
@@ -561,7 +565,7 @@
             {if $instanceDetails->instance_type}
               {assign var="instCpu" value=$instanceDetails->instance_type->cpu_cores}
               {assign var="instRam" value=$instanceDetails->instance_type->ram_mb}
-              {$instanceDetails->instance_type->name|default:'&#8212;'}
+              {$instanceDetails->instance_type->name|escape|default:'&#8212;'}
               {if $instCpu || $instRam}
                 <span style="opacity:0.5;font-size:12px">
                   &mdash; {if $instCpu}{$instCpu} vCPU{/if}{if $instCpu && $instRam}, {/if}{if $instRam}{$instRam} MB RAM{/if}
@@ -696,8 +700,8 @@
           {assign var="logCssClass" value="gpu-log-event-other"}
           {if $logEntry->event == 'stop'}{assign var="logCssClass" value="gpu-log-event-stop"}{/if}
           {if $logEntry->event == 'start'}{assign var="logCssClass" value="gpu-log-event-start"}{/if}
-          <span class="{$logCssClass}">[{$logEntry->event|upper|default:''}]</span>
-          <span class="gpu-log-desc">{$logEntry->event_description|default:''}</span>
+          <span class="{$logCssClass}">[{$logEntry->event|escape|upper|default:''}]</span>
+          <span class="gpu-log-desc">{$logEntry->event_description|escape|default:''}</span>
         </div>
         {/foreach}
       </div>
@@ -714,6 +718,7 @@
       <div class="gpu-actions">
 
         <form method="post" style="margin:0">
+          <input type="hidden" name="token" value="{$token}">
           <input type="hidden" name="instance_action" value="start">
           <button type="submit" class="gpu-btn gpu-btn-start"
             {if $instanceStatus == 'running'}disabled title="Already running"
@@ -723,6 +728,7 @@
         </form>
 
         <form method="post" style="margin:0">
+          <input type="hidden" name="token" value="{$token}">
           <input type="hidden" name="instance_action" value="stop">
           <button type="submit" class="gpu-btn gpu-btn-stop"
             {if $instanceStatus == 'stopped' || $instanceStatus == 'stop'}disabled title="Already stopped"
@@ -732,6 +738,7 @@
         </form>
 
         <form method="post" style="margin:0">
+          <input type="hidden" name="token" value="{$token}">
           <input type="hidden" name="instance_action" value="restart">
           <button type="submit" class="gpu-btn gpu-btn-restart"
             {if $instanceStatus == 'stopped' || $instanceStatus == 'stop'}disabled title="Start the instance first"
@@ -741,6 +748,7 @@
         </form>
 
         <form method="post" style="margin:0;margin-left:auto" onsubmit="return confirmDelete()">
+          <input type="hidden" name="token" value="{$token}">
           <input type="hidden" name="delete_instance" value="1">
           <button type="submit" class="gpu-btn gpu-btn-delete">&#128465; Delete Instance</button>
         </form>
@@ -756,12 +764,14 @@
       {if $sharedVolumeId}
       <div class="gpu-actions">
         <form method="post" style="margin:0" onsubmit="return confirm('Delete this shared volume? This cannot be undone.')">
+          <input type="hidden" name="token" value="{$token}">
           <input type="hidden" name="delete_shared_volume" value="1">
           <button type="submit" class="gpu-btn gpu-btn-delete">&#128465; Delete Shared Volume</button>
         </form>
       </div>
       {elseif $sharedStorageOptions}
       <form method="post" class="gpu-actions">
+        <input type="hidden" name="token" value="{$token}">
         <select name="shared_storage_choice" class="gpu-select" required>
           <option value="">Select a storage tier&hellip;</option>
           {foreach $sharedStorageOptions as $option}

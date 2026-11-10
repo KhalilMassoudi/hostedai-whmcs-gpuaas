@@ -904,7 +904,7 @@ function hostedai_CreateAccount(array $params)
         logModuleCall(
             'hostedai',
             __FUNCTION__,
-            $params,
+            Helper::maskParamsForLog($params),
             $e->getMessage(),
             $e->getTraceAsString()
         );
@@ -947,7 +947,7 @@ function hostedai_SuspendAccount(array $params)
         logModuleCall(
             'hostedai',
             __FUNCTION__,
-            $params,
+            Helper::maskParamsForLog($params),
             $e->getMessage(),
             $e->getTraceAsString()
         );
@@ -993,7 +993,7 @@ function hostedai_UnsuspendAccount(array $params)
         logModuleCall(
             'hostedai',
             __FUNCTION__,
-            $params,
+            Helper::maskParamsForLog($params),
             $e->getMessage(),
             $e->getTraceAsString()
         );
@@ -1060,7 +1060,7 @@ function hostedai_TerminateAccount(array $params)
         logModuleCall(
             'hostedai',
             __FUNCTION__,
-            $params,
+            Helper::maskParamsForLog($params),
             $e->getMessage(),
             $e->getTraceAsString()
         );
@@ -1098,7 +1098,7 @@ function hostedai_ChangePackage(array $params)
         logModuleCall(
             'hostedai',
             __FUNCTION__,
-            $params,
+            Helper::maskParamsForLog($params),
             $e->getMessage(),
             $e->getTraceAsString()
         );
@@ -1173,10 +1173,17 @@ function hostedai_AdminServicesTabFields(array $params)
                     
                     $members = $getTeamMembers['result']->members;
                     foreach ($members as $member) {
-                        $teamEmail = $member->user->email ?? '';
-                        $teamStatus = $member->status ?? '';
-                        $teamRole = $member->role->label ?? '';
-        
+                        // These all come from Hosted AI's API — a client
+                        // controls their own team's member data there, so
+                        // this is untrusted input being built into raw HTML
+                        // for the WHMCS *admin* area. Escaping this is more
+                        // important here than on the client-facing page:
+                        // a successful injection would run in an admin's
+                        // own session, not just another client's.
+                        $teamEmail = htmlspecialchars($member->user->email ?? '', ENT_QUOTES, 'UTF-8');
+                        $teamStatus = htmlspecialchars($member->status ?? '', ENT_QUOTES, 'UTF-8');
+                        $teamRole = htmlspecialchars($member->role->label ?? '', ENT_QUOTES, 'UTF-8');
+
                         $teamMemberHTML .= '<tbody>
                                 <tr>
                                     <td>' . $teamEmail . '</td>
@@ -1304,7 +1311,7 @@ function hostedai_AdminServicesTabFields(array $params)
         logModuleCall(
             'hostedai',
             __FUNCTION__,
-            $params,
+            Helper::maskParamsForLog($params),
             $e->getMessage(),
             $e->getTraceAsString()
         );
@@ -1363,7 +1370,21 @@ function hostedai_ClientArea(array $params)
         // ── END HOSTED AI WALLET ─────────────────────────────
 
         // ── CLIENT AREA ACTION HANDLER ──────────────────────
+        // Every POST handler below requires the service to still be Active
+        // and a valid CSRF token. Without the status check, a suspended
+        // client (wallet exhausted, or simply unpaid) could still reach
+        // every action on this page — including starting a fresh instance
+        // the usage cron would then never see again, since it only queries
+        // Active services. Without the token check, a hostile page could
+        // submit any of these forms on a logged-in client's behalf.
+        $isServiceActive = ($params['status'] ?? '') === 'Active';
+
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_shared_volume'])) {
+            check_token("WHMCS.default");
+            if (!$isServiceActive) {
+                logActivity('hostedai: denied delete_shared_volume for service ' . $params['serviceid']
+                    . ' — service status is ' . ($params['status'] ?? 'unknown') . ', not Active');
+            } else {
             $sharedVolumeId = $helper->getSharedVolumeIdFromNotes($params['serviceid']);
             if (!empty($sharedVolumeId)) {
                 $deleteVolResponse = $helper->deleteSharedVolume($sharedVolumeId);
@@ -1375,9 +1396,15 @@ function hostedai_ClientArea(array $params)
                         . ' (HTTP ' . ($deleteVolResponse['httpcode'] ?? '?') . ') — note left in place so it stays tracked.');
                 }
             }
+            }
         }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_shared_volume'])) {
+            check_token("WHMCS.default");
+            if (!$isServiceActive) {
+                logActivity('hostedai: denied create_shared_volume for service ' . $params['serviceid']
+                    . ' — service status is ' . ($params['status'] ?? 'unknown') . ', not Active');
+            } else {
             $sharedStorageMapJson = $params['configoption21'] ?? '';
             $sharedStorageMap = Helper::decodeAdminJsonMap($sharedStorageMapJson);
 
@@ -1409,12 +1436,20 @@ function hostedai_ClientArea(array $params)
                     logActivity('hostedai: client shared volume creation failed: ' . $volErrorMsg);
                 }
             }
+            }
         }
 
         $actionBlockedMessage = null;
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST' &&
             (isset($_POST['instance_action']) || isset($_POST['delete_instance']))) {
+
+            check_token("WHMCS.default");
+
+            if (!$isServiceActive) {
+                logActivity('hostedai: denied instance action for service ' . $params['serviceid']
+                    . ' — service status is ' . ($params['status'] ?? 'unknown') . ', not Active');
+            } else {
 
             $instanceId = $helper->getPoolSubscriptionIdFromNotes(
                 $params['serviceid']
@@ -1427,18 +1462,18 @@ function hostedai_ClientArea(array $params)
 
                     // Pay-as-you-go clients at $0 (or below, e.g. a usage
                     // charge that landed after the last top-up) must not be
-                    // able to start a new session — the usage cron only
-                    // catches this reactively, every 5 minutes, which would
-                    // otherwise let a $0-balance client start, use, and only
-                    // get suspended after the fact. Subscription/Monthly
+                    // able to start OR restart a session — the usage cron
+                    // only catches this reactively, every 5 minutes, which
+                    // would otherwise let a $0-balance client run, use, and
+                    // only get suspended after the fact. Subscription/Monthly
                     // products never touch the wallet, so they're exempt —
                     // their suspension is WHMCS's normal overdue-invoice flow.
                     $startBillingMode = !empty($params['configoption22']) ? $params['configoption22'] : 'usage';
-                    if ($action === 'start' && $startBillingMode !== 'subscription' && $walletBalance <= 0) {
+                    if (($action === 'start' || $action === 'restart') && $startBillingMode !== 'subscription' && $walletBalance <= 0) {
                         $actionBlockedMessage = 'Your GPU Credits balance is $0.00. Please top up before starting this instance.';
-                        logActivity('hostedai: blocked start for service ' . $params['serviceid']
+                        logActivity('hostedai: blocked ' . $action . ' for service ' . $params['serviceid']
                             . ' — GPU Credits balance is ' . $walletBalance);
-                        $action = null; // fall through without starting
+                        $action = null; // fall through without starting/restarting
                     }
 
                     if ($action === 'start') {
@@ -1457,13 +1492,26 @@ function hostedai_ClientArea(array $params)
                 }
 
                 if (isset($_POST['delete_instance'])) {
-                    $helper->deleteInstance($instanceId);
-                    $helper->savePoolSubscriptionId(
-                        $params['serviceid'], ''
-                    );
-                    logActivity('hostedai: client deleted instance '
-                        . $instanceId);
+                    $deleteInstResponse = $helper->deleteInstance($instanceId);
+                    // Same pattern as TerminateAccount: only clear the
+                    // stored instance ID on a confirmed delete. Clearing it
+                    // unconditionally meant a failed API delete left the
+                    // instance alive on Hosted AI's side while WHMCS (and
+                    // the usage cron, which resolves the instance via this
+                    // same note) lost all track of it — running forever,
+                    // unbilled.
+                    if (($deleteInstResponse['httpcode'] ?? 0) == 200 || ($deleteInstResponse['httpcode'] ?? 0) == 204) {
+                        $helper->savePoolSubscriptionId(
+                            $params['serviceid'], ''
+                        );
+                        logActivity('hostedai: client deleted instance '
+                            . $instanceId);
+                    } else {
+                        logActivity('hostedai: client instance deletion failed for ' . $instanceId
+                            . ' (HTTP ' . ($deleteInstResponse['httpcode'] ?? '?') . ') — note left in place so it stays tracked.');
+                    }
                 }
+            }
             }
         }
         // ── END ACTION HANDLER ──────────────────────────────
@@ -1631,7 +1679,7 @@ function hostedai_ClientArea(array $params)
         logModuleCall(
             'hostedai',
             __FUNCTION__,
-            $params,
+            Helper::maskParamsForLog($params),
             $e->getMessage(),
             $e->getTraceAsString()
         );

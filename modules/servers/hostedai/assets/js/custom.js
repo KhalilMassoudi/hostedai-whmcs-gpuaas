@@ -11,6 +11,9 @@ function generateOTLAndLogin(button, serviceId, userEmail, staticLoginUrl) {
     formData.append('service_id', serviceId);
     formData.append('user_email', userEmail);
     formData.append('static_login_url', staticLoginUrl);
+    if (typeof HOSTEDAI_CSRF_TOKEN !== 'undefined') {
+        formData.append('token', HOSTEDAI_CSRF_TOKEN);
+    }
     
     fetch('/modules/servers/hostedai/lib/ajax.php', {
         method: 'POST',
